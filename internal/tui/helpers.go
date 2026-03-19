@@ -112,3 +112,21 @@ func messagesToTurns(msgs []session.Message) []session.ChatTurn {
 	}
 	return out
 }
+
+func (m *Model) resetInput() {
+	m.input.SetValue("")
+	m.input.SetHeight(1)
+}
+
+func (m *Model) setInputValue(s string) {
+	m.input.SetValue(s)
+	m.input.SetHeight(min(10, max(1, m.input.LineCount())))
+}
+
+func (m *Model) currentLine() string {
+	lines := strings.Split(m.input.Value(), "\n")
+	if row := m.input.Line(); row >= 0 && row < len(lines) {
+		return lines[row]
+	}
+	return m.input.Value()
+}

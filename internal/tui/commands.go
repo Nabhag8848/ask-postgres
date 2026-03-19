@@ -206,15 +206,24 @@ func (m *Model) updateCommandPalette() {
 		return
 	}
 
-	raw := m.input.Value()
-	if !strings.HasPrefix(raw, "/") {
+	curLine := m.currentLine()
+	if !strings.HasPrefix(curLine, "/") {
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
 		return
 	}
 
-	full := strings.ToLower(strings.TrimSpace(raw))
+	for _, ln := range strings.Split(m.input.Value(), "\n") {
+		if strings.TrimSpace(ln) != "" && strings.TrimSpace(ln) != strings.TrimSpace(curLine) {
+			m.cmdOpen = false
+			m.cmdMatches = nil
+			m.cmdSel = 0
+			return
+		}
+	}
+
+	full := strings.ToLower(strings.TrimSpace(curLine))
 	// Match only on the command portion (first word). Once the user adds a
 	// space they're typing arguments — keep showing the matched command.
 	cmdPart := full
@@ -276,9 +285,10 @@ func (m Model) renderHelp() string {
 			heading: "Keybindings",
 			lines: []string{
 				th.Accent.Render("Enter") + th.Meta.Render("            ") + "Send prompt / confirm selection",
+				th.Accent.Render("Alt+Enter / Ctrl+J") + th.Meta.Render(" ") + "New line in prompt",
 				th.Accent.Render("Ctrl+L") + th.Meta.Render("           ") + "Clear transcript",
-				th.Accent.Render("Up / Ctrl+P") + th.Meta.Render("      ") + "Previous input history / navigate picker up",
-				th.Accent.Render("Down / Ctrl+N") + th.Meta.Render("    ") + "Next input history / navigate picker down",
+				th.Accent.Render("\u2191") + th.Meta.Render("                ") + "Navigate prompt history (previous) / picker up",
+				th.Accent.Render("\u2193") + th.Meta.Render("                ") + "Navigate prompt history (next) / picker down",
 				th.Accent.Render("Tab") + th.Meta.Render("              ") + "Autocomplete command (press again to cycle matches)",
 				th.Accent.Render("Esc") + th.Meta.Render("              ") + "Cancel running query / close picker / quit",
 				th.Accent.Render("Ctrl+C") + th.Meta.Render("           ") + "Same as Esc",

@@ -11,10 +11,12 @@ import (
 	"pgwatch-copilot/internal/history"
 	"pgwatch-copilot/internal/session"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Config carries the runtime values the TUI needs from the app layer.
@@ -38,7 +40,7 @@ type Model struct {
 	bodyH  int
 	bodyW  int
 
-	input   textinput.Model
+	input   textarea.Model
 	output  viewport.Model
 	outText string
 
@@ -114,11 +116,21 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 		}
 	}
 
-	in := textinput.New()
+	in := textarea.New()
 	in.Placeholder = "Type a question, / for commands, ? for shortcuts"
 	in.Focus()
-	in.CharLimit = 2000
-	in.Prompt = active.Prompt.Render("> ")
+	in.CharLimit = 4000
+	in.ShowLineNumbers = false
+	in.Prompt = ""
+	in.SetHeight(1)
+	in.SetWidth(80)
+	in.MaxHeight = 10
+	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	in.FocusedStyle.Base = lipgloss.NewStyle()
+	in.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	in.BlurredStyle.Base = lipgloss.NewStyle()
+	in.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	in.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter"))
 
 	vp := viewport.New(0, 0)
 	vp.SetContent("")
@@ -174,7 +186,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.spin.Tick)
+	return tea.Batch(textarea.Blink, m.spin.Tick)
 }
 
 type agentMsg struct {
@@ -323,7 +335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					idx = 0
 				}
 				sel := m.cmdMatches[idx]
-				m.input.SetValue(sel.Cmd + " ")
+				m.setInputValue(sel.Cmd + " ")
 				m.input.CursorEnd()
 				m.updateCommandPalette()
 				return m, nil
@@ -331,6 +343,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m.handleEnter()
+		case "alt+enter", "ctrl+j":
+			m.input.InsertString("\n")
+			m.input.SetHeight(min(10, max(1, m.input.LineCount())))
+			m.layout()
+			return m, nil
 		}
 
 	case agentMsg:
@@ -355,6 +372,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tabCycle = 0
 		m.tabPrefix = ""
 	}
+	m.input.SetHeight(min(10, max(1, m.input.LineCount())))
+	m.layout()
 	m.updateCommandPalette()
 	return m, cmd
 }
@@ -406,31 +425,28 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if prompt == "" {
 		return m, nil
 	}
+	curLine := strings.TrimSpace(m.currentLine())
 	if m.cmdOpen {
 		if len(m.cmdMatches) > 0 && m.cmdSel >= 0 && m.cmdSel < len(m.cmdMatches) {
 			sel := m.cmdMatches[m.cmdSel]
-			m.input.SetValue("")
+			m.resetInput()
 			m.cmdOpen = false
 			m.cmdMatches = nil
 			m.cmdSel = 0
 			if sel.Prompt != "" {
 				return m, m.submitPrompt(sel.Prompt)
 			}
-			// If the user typed arguments (space in input), pass the full
-			// input so args reach the command handler. Otherwise use the
-			// palette selection (acts like tab-completion for partials).
-			if strings.Contains(prompt, " ") {
-				return m, m.runSlashCommand(prompt)
+			if strings.Contains(curLine, " ") {
+				return m, m.runSlashCommand(curLine)
 			}
 			return m, m.runSlashCommand(sel.Cmd)
 		}
-		// No matches — close palette and fall through to normal handling.
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
 	}
-	if strings.HasPrefix(prompt, "/") {
-		m.input.SetValue("")
+	if strings.HasPrefix(prompt, "/") && !strings.Contains(prompt, "\n") {
+		m.resetInput()
 		return m, m.runSlashCommand(prompt)
 	}
 	return m, m.submitPrompt(prompt)
@@ -441,7 +457,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 func (m *Model) submitPrompt(prompt string) tea.Cmd {
 	if m.streaming {
 		m.promptQueue = append(m.promptQueue, prompt)
-		m.input.SetValue("")
+		m.resetInput()
 		m.appendOutput("\n" + currentTheme.Meta.Render("  (queued: "+prompt+")") + "\n")
 		return nil
 	}
@@ -449,7 +465,7 @@ func (m *Model) submitPrompt(prompt string) tea.Cmd {
 	m.pushHistory(prompt)
 	m.histIdx = -1
 	m.histDraft = ""
-	m.input.SetValue("")
+	m.resetInput()
 	m.appendOutput("\n" + userLine(prompt) + "\n")
 
 	userMsgID, _ := session.NewID()
@@ -658,12 +674,12 @@ func (m *Model) historyUp() {
 	if m.histIdx == -1 {
 		m.histDraft = m.input.Value()
 		m.histIdx = len(m.inputHistory) - 1
-		m.input.SetValue(m.inputHistory[m.histIdx])
+		m.setInputValue(m.inputHistory[m.histIdx])
 		return
 	}
 	if m.histIdx > 0 {
 		m.histIdx--
-		m.input.SetValue(m.inputHistory[m.histIdx])
+		m.setInputValue(m.inputHistory[m.histIdx])
 	}
 }
 
@@ -676,14 +692,17 @@ func (m *Model) historyDown() {
 	}
 	if m.histIdx < len(m.inputHistory)-1 {
 		m.histIdx++
-		m.input.SetValue(m.inputHistory[m.histIdx])
+		m.setInputValue(m.inputHistory[m.histIdx])
 		return
 	}
 	m.histIdx = -1
-	m.input.SetValue(m.histDraft)
+	m.setInputValue(m.histDraft)
 }
 
 func (m *Model) layout() {
+	m.input.SetWidth(max(10, m.width-6))
+	m.input.SetHeight(min(10, max(1, m.input.LineCount())))
+
 	headerLines := 1
 	if m.err != "" {
 		headerLines = 2

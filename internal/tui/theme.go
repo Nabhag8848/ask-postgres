@@ -175,7 +175,7 @@ func draculaTheme() theme {
 func (m *Model) applyTheme(t theme) {
 	m.theme = t
 	currentTheme = t
-	m.input.Prompt = t.Prompt.Render("> ")
+	m.input.Prompt = ""
 	m.spin.Style = t.Accent
 	m.spin.Spinner = t.Spinner
 }
