@@ -178,4 +178,7 @@ func (m *Model) applyTheme(t theme) {
 	m.input.Prompt = ""
 	m.spin.Style = t.Accent
 	m.spin.Spinner = t.Spinner
+	m.rebuildTranscriptFromSession()
+	m.output.SetContent(m.outText)
+	m.output.GotoBottom()
 }
