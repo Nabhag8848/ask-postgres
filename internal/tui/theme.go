@@ -39,109 +39,143 @@ type theme struct {
 var currentTheme = defaultThemes()[0]
 
 func defaultThemes() []theme {
-	mk := func(
-		name string,
-		accent, user, assistant, hint, errC, border lipgloss.AdaptiveColor,
-		headerBg, statusBg, promptBg lipgloss.AdaptiveColor,
-		promptBorder lipgloss.Border,
-		userGlyph, assistantGlyph, selectGlyph string,
-		spin spinner.Spinner,
-	) theme {
-		headerBar := lipgloss.NewStyle().Background(headerBg).Padding(0, 1)
-		statusBar := lipgloss.NewStyle().Background(statusBg).Padding(0, 1)
-		promptBox := lipgloss.NewStyle().Background(promptBg)
-
-		return theme{
-			Name:      name,
-			Title:     lipgloss.NewStyle().Bold(true).Foreground(accent),
-			Meta:      lipgloss.NewStyle().Faint(true),
-			Hint:      lipgloss.NewStyle().Foreground(hint).Faint(true),
-			Prompt:    lipgloss.NewStyle().Foreground(accent).Bold(true),
-			User:      lipgloss.NewStyle().Bold(true).Foreground(user),
-			Assistant: lipgloss.NewStyle().Bold(true).Foreground(assistant),
-			Accent:    lipgloss.NewStyle().Foreground(accent),
-			Error:     lipgloss.NewStyle().Foreground(errC).Bold(true),
-
-			UserMark:      lipgloss.NewStyle().Foreground(user).Bold(true),
-			AssistantMark: lipgloss.NewStyle().Foreground(assistant).Bold(true),
-			BorderColor:   border,
-
-			CmdItem:     lipgloss.NewStyle().Foreground(hint).Faint(true),
-			CmdSelected: lipgloss.NewStyle().Foreground(accent).Bold(true),
-
-			HeaderBar:    headerBar,
-			StatusBar:    statusBar,
-			PromptBox:    promptBox,
-			PromptBorder: promptBorder,
-
-			UserGlyph:      userGlyph,
-			AssistantGlyph: assistantGlyph,
-			SelectGlyph:    selectGlyph,
-
-			Spinner: spin,
-		}
-	}
-
-	border := lipgloss.AdaptiveColor{Light: "#D1D5DB", Dark: "#2A2F3A"}
 	return []theme{
-		mk(
-			"Azure Pop",
-			lipgloss.AdaptiveColor{Light: "#2563EB", Dark: "#60A5FA"},
-			lipgloss.AdaptiveColor{Light: "#BE185D", Dark: "#F472B6"},
-			lipgloss.AdaptiveColor{Light: "#047857", Dark: "#34D399"},
-			lipgloss.AdaptiveColor{Light: "#B45309", Dark: "#FBBF24"},
-			lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"},
-			border,
-			lipgloss.AdaptiveColor{Light: "#EFF6FF", Dark: "#0B1220"},
-			lipgloss.AdaptiveColor{Light: "#F8FAFC", Dark: "#0A0F1A"},
-			lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#05070D"},
-			lipgloss.RoundedBorder(),
-			"› ",
-			"❯ ",
-			"▸ ",
-			spinner.Line,
-		),
-		mk(
-			"Violet Night",
-			lipgloss.AdaptiveColor{Light: "#6D28D9", Dark: "#A78BFA"},
-			lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#FB7185"},
-			lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"},
-			lipgloss.AdaptiveColor{Light: "#92400E", Dark: "#FCD34D"},
-			lipgloss.AdaptiveColor{Light: "#9F1239", Dark: "#FDA4AF"},
-			border,
-			lipgloss.AdaptiveColor{Light: "#FAF5FF", Dark: "#12081C"},
-			lipgloss.AdaptiveColor{Light: "#FDF4FF", Dark: "#0F0718"},
-			lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#090312"},
-			lipgloss.ThickBorder(),
-			"∙ ",
-			"◆ ",
-			"▶ ",
-			spinner.Dot,
-		),
-		mk(
-			"Solar Mint",
-			lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#34D399"},
-			lipgloss.AdaptiveColor{Light: "#9A3412", Dark: "#FDBA74"},
-			lipgloss.AdaptiveColor{Light: "#1D4ED8", Dark: "#93C5FD"},
-			lipgloss.AdaptiveColor{Light: "#7C2D12", Dark: "#FBBF24"},
-			lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"},
-			border,
-			lipgloss.AdaptiveColor{Light: "#ECFEFF", Dark: "#07171A"},
-			lipgloss.AdaptiveColor{Light: "#F0FDFA", Dark: "#061315"},
-			lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#040B0B"},
-			lipgloss.DoubleBorder(),
-			"→ ",
-			"↳ ",
-			"▸ ",
-			spinner.MiniDot,
-		),
+		darkTheme(),
+		lightTheme(),
+		draculaTheme(),
+	}
+}
+
+func darkTheme() theme {
+	accent := lipgloss.Color("#DA7756")
+	fgDim := lipgloss.Color("#6B6B6B")
+	user := lipgloss.Color("#DA7756")
+	assistant := lipgloss.Color("#D4D4D4")
+	errC := lipgloss.Color("#EF4444")
+	border := lipgloss.AdaptiveColor{Light: "#404040", Dark: "#333333"}
+	headerBg := lipgloss.AdaptiveColor{Light: "#E5E5E5", Dark: "#1A1A1A"}
+	statusBg := lipgloss.AdaptiveColor{Light: "#E5E5E5", Dark: "#1A1A1A"}
+
+	return theme{
+		Name:      "Dark",
+		Title:     lipgloss.NewStyle().Bold(true).Foreground(accent),
+		Meta:      lipgloss.NewStyle().Foreground(fgDim),
+		Hint:      lipgloss.NewStyle().Foreground(fgDim),
+		Prompt:    lipgloss.NewStyle().Foreground(accent).Bold(true),
+		User:      lipgloss.NewStyle().Bold(true).Foreground(user),
+		Assistant: lipgloss.NewStyle().Foreground(assistant),
+		Accent:    lipgloss.NewStyle().Foreground(accent),
+		Error:     lipgloss.NewStyle().Foreground(errC).Bold(true),
+
+		UserMark:      lipgloss.NewStyle().Foreground(user).Bold(true),
+		AssistantMark: lipgloss.NewStyle().Foreground(fgDim),
+		BorderColor:   border,
+
+		CmdItem:     lipgloss.NewStyle().Foreground(fgDim),
+		CmdSelected: lipgloss.NewStyle().Foreground(accent).Bold(true),
+
+		HeaderBar:    lipgloss.NewStyle().Background(headerBg).Padding(0, 1),
+		StatusBar:    lipgloss.NewStyle().Background(statusBg).Padding(0, 1),
+		PromptBox:    lipgloss.NewStyle(),
+		PromptBorder: lipgloss.RoundedBorder(),
+
+		UserGlyph:      "> ",
+		AssistantGlyph: "  ",
+		SelectGlyph:    "> ",
+
+		Spinner: spinner.Line,
+	}
+}
+
+func lightTheme() theme {
+	accent := lipgloss.Color("#B35C37")
+	fg := lipgloss.Color("#1A1A1A")
+	fgDim := lipgloss.Color("#8C8C8C")
+	user := lipgloss.Color("#B35C37")
+	assistant := lipgloss.Color("#333333")
+	errC := lipgloss.Color("#DC2626")
+	border := lipgloss.AdaptiveColor{Light: "#C0C0C0", Dark: "#C0C0C0"}
+	headerBg := lipgloss.AdaptiveColor{Light: "#F0F0F0", Dark: "#F0F0F0"}
+	statusBg := lipgloss.AdaptiveColor{Light: "#F0F0F0", Dark: "#F0F0F0"}
+
+	return theme{
+		Name:      "Light",
+		Title:     lipgloss.NewStyle().Bold(true).Foreground(accent),
+		Meta:      lipgloss.NewStyle().Foreground(fgDim),
+		Hint:      lipgloss.NewStyle().Foreground(fgDim),
+		Prompt:    lipgloss.NewStyle().Foreground(accent).Bold(true),
+		User:      lipgloss.NewStyle().Bold(true).Foreground(user),
+		Assistant: lipgloss.NewStyle().Foreground(assistant),
+		Accent:    lipgloss.NewStyle().Foreground(accent),
+		Error:     lipgloss.NewStyle().Foreground(errC).Bold(true),
+
+		UserMark:      lipgloss.NewStyle().Foreground(user).Bold(true),
+		AssistantMark: lipgloss.NewStyle().Foreground(fgDim),
+		BorderColor:   border,
+
+		CmdItem:     lipgloss.NewStyle().Foreground(fgDim),
+		CmdSelected: lipgloss.NewStyle().Foreground(accent).Bold(true),
+
+		HeaderBar:    lipgloss.NewStyle().Background(headerBg).Foreground(fg).Padding(0, 1),
+		StatusBar:    lipgloss.NewStyle().Background(statusBg).Foreground(fg).Padding(0, 1),
+		PromptBox:    lipgloss.NewStyle(),
+		PromptBorder: lipgloss.RoundedBorder(),
+
+		UserGlyph:      "> ",
+		AssistantGlyph: "  ",
+		SelectGlyph:    "> ",
+
+		Spinner: spinner.Line,
+	}
+}
+
+func draculaTheme() theme {
+	purple := lipgloss.Color("#BD93F9")
+	green := lipgloss.Color("#50FA7B")
+	pink := lipgloss.Color("#FF79C6")
+	cyan := lipgloss.Color("#8BE9FD")
+	red := lipgloss.Color("#FF5555")
+	comment := lipgloss.Color("#6272A4")
+
+	border := lipgloss.AdaptiveColor{Light: "#6272A4", Dark: "#44475A"}
+	headerBg := lipgloss.AdaptiveColor{Light: "#E8E8F0", Dark: "#21222C"}
+	statusBg := lipgloss.AdaptiveColor{Light: "#E8E8F0", Dark: "#21222C"}
+
+	return theme{
+		Name:      "Dracula",
+		Title:     lipgloss.NewStyle().Bold(true).Foreground(purple),
+		Meta:      lipgloss.NewStyle().Foreground(comment),
+		Hint:      lipgloss.NewStyle().Foreground(comment),
+		Prompt:    lipgloss.NewStyle().Foreground(green).Bold(true),
+		User:      lipgloss.NewStyle().Bold(true).Foreground(green),
+		Assistant: lipgloss.NewStyle().Foreground(cyan),
+		Accent:    lipgloss.NewStyle().Foreground(purple),
+		Error:     lipgloss.NewStyle().Foreground(red).Bold(true),
+
+		UserMark:      lipgloss.NewStyle().Foreground(pink).Bold(true),
+		AssistantMark: lipgloss.NewStyle().Foreground(purple),
+		BorderColor:   border,
+
+		CmdItem:     lipgloss.NewStyle().Foreground(comment),
+		CmdSelected: lipgloss.NewStyle().Foreground(green).Bold(true),
+
+		HeaderBar:    lipgloss.NewStyle().Background(headerBg).Padding(0, 1),
+		StatusBar:    lipgloss.NewStyle().Background(statusBg).Padding(0, 1),
+		PromptBox:    lipgloss.NewStyle(),
+		PromptBorder: lipgloss.RoundedBorder(),
+
+		UserGlyph:      "> ",
+		AssistantGlyph: "  ",
+		SelectGlyph:    "> ",
+
+		Spinner: spinner.Line,
 	}
 }
 
 func (m *Model) applyTheme(t theme) {
 	m.theme = t
 	currentTheme = t
-	m.input.Prompt = t.Prompt.Render("› ")
+	m.input.Prompt = t.Prompt.Render("> ")
 	m.spin.Style = t.Accent
 	m.spin.Spinner = t.Spinner
 }

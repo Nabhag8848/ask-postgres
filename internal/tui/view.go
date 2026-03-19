@@ -20,18 +20,6 @@ func (m Model) View() string {
 	}
 
 	body := m.renderBody()
-	if m.themeOpen {
-		body = m.renderThemePicker()
-	}
-	if m.modelPickerOpen {
-		body = m.renderModelPicker()
-	}
-	if m.sessionPickerOpen {
-		body = m.renderSessionPicker()
-	}
-	if m.customPickerOpen {
-		body = m.renderCustomPicker()
-	}
 
 	leftStatus := "enter: send  ctrl+l: clear  esc: cancel/quit"
 	if m.streaming && !m.seenToken {
@@ -48,13 +36,10 @@ func (m Model) View() string {
 
 	prompt := m.renderPrompt()
 
-	fillerH := 0
-	if !m.themeOpen && !m.modelPickerOpen && !m.sessionPickerOpen && !m.customPickerOpen {
-		used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
-		fillerH = m.height - used
-		if fillerH < 0 {
-			fillerH = 0
-		}
+	used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
+	fillerH := m.height - used
+	if fillerH < 0 {
+		fillerH = 0
 	}
 	filler := ""
 	if fillerH > 0 {
@@ -73,13 +58,13 @@ func (m Model) liveTokenUsageStatus() string {
 	outTok := m.pending.OutputTokEst
 	total := inTok + outTok
 
-	sep := "  ·  "
+	sep := "  \u00b7  "
 	if m.streaming {
 		switch m.dots {
 		case 0, 2:
-			sep = "  •  "
+			sep = "  \u2022  "
 		default:
-			sep = "  ·  "
+			sep = "  \u00b7  "
 		}
 	}
 	return sep + fmt.Sprintf("tok ~%d (in %d / out %d)", total, inTok, outTok)
@@ -100,6 +85,18 @@ func (m Model) renderBody() string {
 
 func (m Model) renderPrompt() string {
 	th := m.theme
+
+	switch {
+	case m.themeOpen:
+		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderThemePicker())
+	case m.modelPickerOpen:
+		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderModelPicker())
+	case m.sessionPickerOpen:
+		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderSessionPicker())
+	case m.customPickerOpen:
+		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderCustomPicker())
+	}
+
 	box := th.PromptBox.Copy().
 		Border(th.PromptBorder).
 		BorderForeground(th.BorderColor).
@@ -114,11 +111,30 @@ func (m Model) renderPrompt() string {
 }
 
 func (m Model) promptHeight() int {
-	lines := 1
-	if m.cmdOpen {
-		lines += min(6, len(m.cmdMatches))
+	switch {
+	case m.themeOpen:
+		return min(8, len(m.themes)) + 3
+	case m.modelPickerOpen:
+		return min(10, len(m.modelOptions)) + 3
+	case m.sessionPickerOpen:
+		n := min(10, len(m.sessionList))
+		if n == 0 {
+			n = 1
+		}
+		return n + 3
+	case m.customPickerOpen:
+		n := min(10, len(m.customList))
+		if n == 0 {
+			n = 1
+		}
+		return n + 4
+	default:
+		lines := 1
+		if m.cmdOpen {
+			lines += min(6, len(m.cmdMatches))
+		}
+		return lines + 2
 	}
-	return lines + 2
 }
 
 func (m Model) statusLine(left, right string) string {

@@ -115,7 +115,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 	in.Placeholder = "Ask about your Postgres\u2026 (try: \u201clargest tables?\u201d, \u201cdescribe app.orders\u201d, \u201crevenue by day\u201d)"
 	in.Focus()
 	in.CharLimit = 2000
-	in.Prompt = active.Prompt.Render("› ")
+	in.Prompt = active.Prompt.Render("> ")
 
 	vp := viewport.New(0, 0)
 	vp.SetContent("")
