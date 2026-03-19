@@ -58,6 +58,8 @@ type Model struct {
 	cmdOpen    bool
 	cmdMatches []slashCommand
 	cmdSel     int
+	tabCycle   int
+	tabPrefix  string
 
 	modelPickerOpen bool
 	modelOptions    []string
@@ -146,7 +148,6 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			{Cmd: "/customs", Desc: "Browse and run saved custom commands"},
 			{Cmd: "/delete-custom", Desc: "Delete a custom command (/delete-custom <name>)"},
 			{Cmd: "/exit", Desc: "Exit"},
-			{Cmd: "/quit", Desc: "Exit"},
 		},
 		modelOptions: []string{
 			"gpt-4.1-mini",
@@ -307,6 +308,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+l":
 			m.clearTranscript()
 			return m, nil
+		case "tab":
+			if m.cmdOpen && len(m.cmdMatches) > 0 {
+				raw := m.input.Value()
+				prefix := raw
+				if idx := strings.IndexByte(raw, ' '); idx != -1 {
+					prefix = raw[:idx]
+				}
+				if prefix != m.tabPrefix {
+					m.tabCycle = 0
+					m.tabPrefix = prefix
+				}
+				idx := m.tabCycle % len(m.cmdMatches)
+				sel := m.cmdMatches[idx]
+				m.input.SetValue(sel.Cmd + " ")
+				m.input.CursorEnd()
+				m.cmdSel = idx
+				m.tabCycle++
+				m.updateCommandPalette()
+				return m, nil
+			}
+			return m, nil
 		case "enter":
 			return m.handleEnter()
 		}
@@ -315,8 +337,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleAgentEvent(msg)
 	}
 
+	prev := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != prev {
+		m.tabCycle = 0
+		m.tabPrefix = ""
+	}
 	m.updateCommandPalette()
 	return m, cmd
 }

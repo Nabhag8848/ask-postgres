@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -231,14 +232,24 @@ func (m Model) renderCustomPicker() string {
 
 func (m Model) renderCommandPalette() string {
 	th := m.theme
-	maxItems := min(6, len(m.cmdMatches))
-	if maxItems == 0 {
+	total := len(m.cmdMatches)
+	if total == 0 {
 		return th.Meta.Render("no commands")
 	}
 
+	visible := min(6, total)
+	start := 0
+	if m.cmdSel >= visible {
+		start = m.cmdSel - visible + 1
+	}
+
 	var b strings.Builder
-	for i := 0; i < maxItems; i++ {
-		c := m.cmdMatches[i]
+	for i := 0; i < visible; i++ {
+		idx := start + i
+		if idx >= total {
+			break
+		}
+		c := m.cmdMatches[idx]
 		line := c.Cmd
 		if c.Prompt != "" {
 			line += th.Meta.Render("  [custom]  " + c.Desc)
@@ -246,14 +257,17 @@ func (m Model) renderCommandPalette() string {
 			line += th.Meta.Render("  " + c.Desc)
 		}
 
-		if i == m.cmdSel {
+		if idx == m.cmdSel {
 			b.WriteString(th.CmdSelected.Render(th.SelectGlyph + line))
 		} else {
 			b.WriteString(th.CmdItem.Render("  " + line))
 		}
-		if i != maxItems-1 {
+		if i != visible-1 {
 			b.WriteByte('\n')
 		}
+	}
+	if total > visible {
+		b.WriteString("\n" + th.Meta.Render(fmt.Sprintf("  (%d more)", total-visible)))
 	}
 	return b.String()
 }

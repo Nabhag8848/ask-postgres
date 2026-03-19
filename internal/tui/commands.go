@@ -17,7 +17,7 @@ type slashCommand struct {
 
 var builtinNames = map[string]bool{
 	"help": true, "session": true, "theme": true, "model": true,
-	"copy": true, "clear": true, "exit": true, "quit": true,
+	"copy": true, "clear": true, "exit": true,
 	"create-custom": true, "customs": true, "delete-custom": true,
 }
 
@@ -170,11 +170,12 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 		_ = m.cleanupSessionIfEmpty()
 		_ = m.persistSession()
 		return nil
-	case "/exit", "/quit":
+	case "/exit":
 		if m.streaming && m.runCancel != nil {
 			m.runCancel()
 			m.runCancel = nil
 		}
+		_ = m.cleanupSessionIfEmpty()
 		return tea.Quit
 	default:
 		name := strings.TrimPrefix(base, "/")
@@ -268,7 +269,7 @@ func (m Model) renderHelp() string {
 				th.Accent.Render("/create-custom") + th.Meta.Render("     ") + "Save a reusable command: " + th.Accent.Render("/create-custom <name> <prompt>"),
 				th.Accent.Render("/customs") + th.Meta.Render("           ") + "Browse and run your saved custom commands",
 				th.Accent.Render("/delete-custom") + th.Meta.Render("     ") + "Remove a custom command: " + th.Accent.Render("/delete-custom <name>"),
-				th.Accent.Render("/exit") + ", " + th.Accent.Render("/quit") + th.Meta.Render("       ") + "Exit the application",
+				th.Accent.Render("/exit") + th.Meta.Render("              ") + "Exit the application",
 			},
 		},
 		{
@@ -278,6 +279,7 @@ func (m Model) renderHelp() string {
 				th.Accent.Render("Ctrl+L") + th.Meta.Render("           ") + "Clear transcript",
 				th.Accent.Render("Up / Ctrl+P") + th.Meta.Render("      ") + "Previous input history / navigate picker up",
 				th.Accent.Render("Down / Ctrl+N") + th.Meta.Render("    ") + "Next input history / navigate picker down",
+				th.Accent.Render("Tab") + th.Meta.Render("              ") + "Autocomplete command (press again to cycle matches)",
 				th.Accent.Render("Esc") + th.Meta.Render("              ") + "Cancel running query / close picker / quit",
 				th.Accent.Render("Ctrl+C") + th.Meta.Render("           ") + "Same as Esc",
 			},
