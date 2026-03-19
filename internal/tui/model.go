@@ -74,6 +74,8 @@ type Model struct {
 	customList       []custom.Command
 	customSel        int
 
+	shortcutsOpen bool
+
 	streaming bool
 	seenToken bool
 	events    <-chan agent.Event
@@ -112,7 +114,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 	}
 
 	in := textinput.New()
-	in.Placeholder = "Ask about your Postgres\u2026 (try: \u201clargest tables?\u201d, \u201cdescribe app.orders\u201d, \u201crevenue by day\u201d)"
+	in.Placeholder = "Type a question, / for commands, ? for shortcuts"
 	in.Focus()
 	in.CharLimit = 2000
 	in.Prompt = active.Prompt.Render("> ")
@@ -201,6 +203,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
+			if m.shortcutsOpen {
+				m.shortcutsOpen = false
+				return m, nil
+			}
 			if m.themeOpen && !m.streaming {
 				m.themeOpen = false
 				return m, nil
@@ -335,6 +341,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentMsg:
 		return m.handleAgentEvent(msg)
+	}
+
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if m.shortcutsOpen {
+			m.shortcutsOpen = false
+			return m, nil
+		}
+		if keyMsg.String() == "?" && strings.TrimSpace(m.input.Value()) == "" {
+			m.shortcutsOpen = true
+			return m, nil
+		}
 	}
 
 	prev := m.input.Value()

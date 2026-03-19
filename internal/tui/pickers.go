@@ -207,3 +207,50 @@ func (m Model) renderCommandPalette() string {
 	}
 	return b.String()
 }
+
+func (m Model) renderShortcuts() string {
+	th := m.theme
+	title := th.Title.Render("Shortcuts")
+
+	pad := func(s string, w int) string {
+		if len(s) >= w {
+			return s
+		}
+		return s + strings.Repeat(" ", w-len(s))
+	}
+
+	type shortcut struct {
+		key  string
+		desc string
+	}
+	items := []shortcut{
+		{"?", "show this shortcuts panel"},
+		{"/", "open command palette"},
+		{"Enter", "send prompt / confirm selection"},
+		{"Tab", "autocomplete command (cycle matches)"},
+		{"Up / Ctrl+P", "previous history / navigate up"},
+		{"Down / Ctrl+N", "next history / navigate down"},
+		{"Ctrl+L", "clear transcript"},
+		{"Esc", "cancel query / close picker / quit"},
+		{"Ctrl+C", "same as Esc"},
+	}
+
+	keyW := 0
+	for _, s := range items {
+		if len(s.key) > keyW {
+			keyW = len(s.key)
+		}
+	}
+	keyW += 2
+
+	var b strings.Builder
+	for i, s := range items {
+		b.WriteString(th.Accent.Render(pad(s.key, keyW)) + th.Meta.Render(s.desc))
+		if i < len(items)-1 {
+			b.WriteByte('\n')
+		}
+	}
+
+	footer := th.Meta.Render("press any key to dismiss")
+	return title + "\n\n" + b.String() + "\n\n" + footer
+}

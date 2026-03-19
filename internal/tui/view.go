@@ -86,15 +86,18 @@ func (m Model) renderBody() string {
 func (m Model) renderPrompt() string {
 	th := m.theme
 
+	inline := lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width))
 	switch {
+	case m.shortcutsOpen:
+		return inline.Render(m.renderShortcuts())
 	case m.themeOpen:
-		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderThemePicker())
+		return inline.Render(m.renderThemePicker())
 	case m.modelPickerOpen:
-		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderModelPicker())
+		return inline.Render(m.renderModelPicker())
 	case m.sessionPickerOpen:
-		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderSessionPicker())
+		return inline.Render(m.renderSessionPicker())
 	case m.customPickerOpen:
-		return lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderCustomPicker())
+		return inline.Render(m.renderCustomPicker())
 	}
 
 	box := th.PromptBox.Copy().
@@ -112,6 +115,8 @@ func (m Model) renderPrompt() string {
 
 func (m Model) promptHeight() int {
 	switch {
+	case m.shortcutsOpen:
+		return 14
 	case m.themeOpen:
 		return min(8, len(m.themes)) + 3
 	case m.modelPickerOpen:
