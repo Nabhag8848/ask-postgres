@@ -11,10 +11,19 @@ type ChatTurn struct {
 // Session represents a single conversation persisted on disk.
 type Session struct {
 	ID        string    `json:"id"`
+	Name      string    `json:"name,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Turns     []ChatTurn `json:"turns,omitempty"`
 	Messages  []Message  `json:"messages,omitempty"`
+}
+
+// DisplayName returns the human-readable session label: Name if set, otherwise ID.
+func (s Session) DisplayName() string {
+	if s.Name != "" {
+		return s.Name
+	}
+	return s.ID
 }
 
 // Message is a single chat message within a session.

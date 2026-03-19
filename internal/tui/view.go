@@ -11,7 +11,8 @@ import (
 func (m Model) View() string {
 	th := m.theme
 
-	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN)))
+	sessionLabel := m.sess.DisplayName()
+	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN))) + "  " + th.Meta.Render("session=" + sessionLabel)
 	headerInner := truncateWithEllipsis(headerLeft, max(40, m.width))
 	header := th.HeaderBar.Width(max(40, m.width)).Render(headerInner)
 	if m.err != "" {
@@ -27,6 +28,9 @@ func (m Model) View() string {
 	}
 	if m.sessionPickerOpen {
 		body = m.renderSessionPicker()
+	}
+	if m.customPickerOpen {
+		body = m.renderCustomPicker()
 	}
 
 	leftStatus := "enter: send  ctrl+l: clear  esc: cancel/quit"
@@ -45,7 +49,7 @@ func (m Model) View() string {
 	prompt := m.renderPrompt()
 
 	fillerH := 0
-	if !m.themeOpen && !m.modelPickerOpen && !m.sessionPickerOpen {
+	if !m.themeOpen && !m.modelPickerOpen && !m.sessionPickerOpen && !m.customPickerOpen {
 		used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
 		fillerH = m.height - used
 		if fillerH < 0 {

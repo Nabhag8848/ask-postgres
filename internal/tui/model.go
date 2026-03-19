@@ -7,6 +7,7 @@ import (
 
 	"pgwatch-copilot/internal/agent"
 	"pgwatch-copilot/internal/config"
+	"pgwatch-copilot/internal/custom"
 	"pgwatch-copilot/internal/history"
 	"pgwatch-copilot/internal/session"
 
@@ -65,6 +66,11 @@ type Model struct {
 	sessionPickerOpen bool
 	sessionList       []session.Session
 	sessionSel        int
+
+	customStore      *custom.Store
+	customPickerOpen bool
+	customList       []custom.Command
+	customSel        int
 
 	streaming bool
 	seenToken bool
@@ -131,10 +137,14 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 		commands: []slashCommand{
 			{Cmd: "/help", Desc: "Show all commands and keybindings"},
 			{Cmd: "/session", Desc: "Switch/resume session (/session <id>)"},
+			{Cmd: "/session rename", Desc: "Rename current session (/session rename <name>)"},
 			{Cmd: "/theme", Desc: "Choose theme"},
 			{Cmd: "/model", Desc: "Choose model"},
 			{Cmd: "/copy", Desc: "Copy last response to clipboard"},
 			{Cmd: "/clear", Desc: "Clear transcript"},
+			{Cmd: "/create-custom", Desc: "Save a custom command (/create-custom <name> <prompt>)"},
+			{Cmd: "/customs", Desc: "Browse and run saved custom commands"},
+			{Cmd: "/delete-custom", Desc: "Delete a custom command (/delete-custom <name>)"},
 			{Cmd: "/exit", Desc: "Exit"},
 			{Cmd: "/quit", Desc: "Exit"},
 		},
@@ -144,6 +154,9 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			"gpt-4o-mini",
 			"gpt-4o",
 		},
+	}
+	if cs, err := custom.NewStore(); err == nil {
+		m.customStore = cs
 	}
 	m.rebuildTranscriptFromSession()
 	m.inputHistory = history.Load()
@@ -199,6 +212,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sessionPickerOpen = false
 				return m, nil
 			}
+			if m.customPickerOpen && !m.streaming {
+				m.customPickerOpen = false
+				return m, nil
+			}
 			if m.cmdOpen && !m.streaming {
 				m.cmdOpen = false
 				m.cmdMatches = nil
@@ -237,6 +254,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.customPickerOpen {
+				if m.customSel > 0 {
+					m.customSel--
+				}
+				return m, nil
+			}
 			if m.cmdOpen {
 				if m.cmdSel > 0 {
 					m.cmdSel--
@@ -264,6 +287,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sessionPickerOpen {
 				if m.sessionSel < len(m.sessionList)-1 {
 					m.sessionSel++
+				}
+				return m, nil
+			}
+			if m.customPickerOpen {
+				if m.customSel < len(m.customList)-1 {
+					m.customSel++
 				}
 				return m, nil
 			}
@@ -327,26 +356,53 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	}
+	if m.customPickerOpen {
+		if len(m.customList) > 0 && m.customSel >= 0 && m.customSel < len(m.customList) {
+			sel := m.customList[m.customSel]
+			m.customPickerOpen = false
+			m.layout()
+			return m, m.submitPrompt(sel.Prompt)
+		}
+		m.customPickerOpen = false
+		m.layout()
+		return m, nil
+	}
 	prompt := strings.TrimSpace(m.input.Value())
 	if prompt == "" {
 		return m, nil
 	}
 	if m.cmdOpen {
 		if len(m.cmdMatches) > 0 && m.cmdSel >= 0 && m.cmdSel < len(m.cmdMatches) {
-			cmd := m.cmdMatches[m.cmdSel].Cmd
+			sel := m.cmdMatches[m.cmdSel]
 			m.input.SetValue("")
 			m.cmdOpen = false
 			m.cmdMatches = nil
 			m.cmdSel = 0
-			return m, m.runSlashCommand(cmd)
+			if sel.Prompt != "" {
+				return m, m.submitPrompt(sel.Prompt)
+			}
+			// If the user typed arguments (space in input), pass the full
+			// input so args reach the command handler. Otherwise use the
+			// palette selection (acts like tab-completion for partials).
+			if strings.Contains(prompt, " ") {
+				return m, m.runSlashCommand(prompt)
+			}
+			return m, m.runSlashCommand(sel.Cmd)
 		}
+		// No matches — close palette and fall through to normal handling.
 		m.cmdOpen = false
-		return m, nil
+		m.cmdMatches = nil
+		m.cmdSel = 0
 	}
 	if strings.HasPrefix(prompt, "/") {
 		m.input.SetValue("")
 		return m, m.runSlashCommand(prompt)
 	}
+	return m, m.submitPrompt(prompt)
+}
+
+// submitPrompt sends a prompt to the agent and starts the streaming cycle.
+func (m *Model) submitPrompt(prompt string) tea.Cmd {
 	m.pushHistory(prompt)
 	m.histIdx = -1
 	m.histDraft = ""
@@ -381,7 +437,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	runCtx, cancel := context.WithCancel(context.Background())
 	m.runCancel = cancel
 	m.events = m.agent.Run(runCtx, prompt)
-	return m, waitAgentEvent(m.events)
+	return waitAgentEvent(m.events)
 }
 
 func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {

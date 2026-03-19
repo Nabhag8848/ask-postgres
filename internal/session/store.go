@@ -134,6 +134,15 @@ func (s *Store) List() ([]Session, error) {
 	return out, nil
 }
 
+// Latest returns the most recently updated session, or an empty Session if none exist.
+func (s *Store) Latest() (Session, bool) {
+	list, err := s.List()
+	if err != nil || len(list) == 0 {
+		return Session{}, false
+	}
+	return list[0], true
+}
+
 // NewID generates a random 16-hex-character session identifier.
 func NewID() (string, error) {
 	var b [8]byte

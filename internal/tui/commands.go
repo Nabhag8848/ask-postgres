@@ -10,8 +10,15 @@ import (
 )
 
 type slashCommand struct {
-	Cmd  string
-	Desc string
+	Cmd    string
+	Desc   string
+	Prompt string // non-empty for custom commands — sent to the agent directly
+}
+
+var builtinNames = map[string]bool{
+	"help": true, "session": true, "theme": true, "model": true,
+	"copy": true, "clear": true, "exit": true, "quit": true,
+	"create-custom": true, "customs": true, "delete-custom": true,
 }
 
 func (m *Model) runSlashCommand(cmd string) tea.Cmd {
@@ -30,7 +37,74 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 	case "/help":
 		m.appendOutput("\n" + m.renderHelp() + "\n")
 		return nil
+	case "/create-custom":
+		if len(fields) < 3 {
+			m.appendOutput("\n" + assistantHeader() + "Usage: /create-custom <name> <prompt...>\n")
+			m.appendOutput(assistantHeader() + "Example: /create-custom daily-revenue Show me revenue by day for the last 7 days\n")
+			return nil
+		}
+		name := fields[1]
+		if builtinNames[name] {
+			m.appendOutput("\n" + assistantHeader() + "Cannot use \"" + name + "\" — conflicts with a built-in command.\n")
+			return nil
+		}
+		prompt := strings.Join(fields[2:], " ")
+		if m.customStore != nil {
+			if err := m.customStore.Add(name, prompt); err != nil {
+				m.appendOutput("\n" + assistantHeader() + "Error saving custom command: " + err.Error() + "\n")
+				return nil
+			}
+		}
+		m.appendOutput("\n" + assistantHeader() + "Saved custom command " + m.theme.Accent.Render("/"+name) + "\n")
+		m.appendOutput(m.theme.Meta.Render("  Prompt: "+prompt) + "\n")
+		m.appendOutput(m.theme.Meta.Render("  Run it by typing /"+name+" or selecting it from the command palette.") + "\n")
+		return nil
+	case "/customs":
+		if m.customStore == nil {
+			m.appendOutput("\n" + assistantHeader() + "Custom commands not available.\n")
+			return nil
+		}
+		list := m.customStore.List()
+		if len(list) == 0 {
+			m.appendOutput("\n" + assistantHeader() + "No custom commands saved yet.\n")
+			m.appendOutput(m.theme.Meta.Render("  Create one: /create-custom <name> <prompt...>") + "\n")
+			return nil
+		}
+		m.customList = list
+		m.customSel = 0
+		m.customPickerOpen = true
+		m.modelPickerOpen = false
+		m.themeOpen = false
+		m.sessionPickerOpen = false
+		m.cmdOpen = false
+		m.layout()
+		return nil
+	case "/delete-custom":
+		if arg == "" {
+			m.appendOutput("\n" + assistantHeader() + "Usage: /delete-custom <name>\n")
+			return nil
+		}
+		if m.customStore == nil {
+			return nil
+		}
+		if err := m.customStore.Delete(arg); err != nil {
+			m.appendOutput("\n" + assistantHeader() + err.Error() + "\n")
+			return nil
+		}
+		m.appendOutput("\n" + assistantHeader() + "Deleted custom command " + m.theme.Accent.Render("/"+arg) + "\n")
+		return nil
 	case "/session":
+		if arg == "rename" {
+			if len(fields) < 3 {
+				m.appendOutput("\n" + assistantHeader() + "Usage: /session rename <new name>\n")
+				return nil
+			}
+			newName := strings.Join(fields[2:], " ")
+			m.sess.Name = newName
+			_ = m.persistSession()
+			m.appendOutput("\n" + assistantHeader() + "Session renamed to " + m.theme.Accent.Render(newName) + "\n")
+			return nil
+		}
 		if arg != "" {
 			if err := m.switchToSession(arg); err != nil {
 				m.appendOutput("\n" + assistantHeader() + "Could not open session " + arg + ": " + err.Error() + "\n")
@@ -103,6 +177,12 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 		}
 		return tea.Quit
 	default:
+		name := strings.TrimPrefix(base, "/")
+		if m.customStore != nil {
+			if c, ok := m.customStore.Get(name); ok {
+				return m.submitPrompt(c.Prompt)
+			}
+		}
 		m.appendOutput("\n" + assistantHeader() + "Unknown command. Type /help for a list of available commands.\n")
 		return nil
 	}
@@ -118,7 +198,7 @@ func (m Model) lastAssistantContent() string {
 }
 
 func (m *Model) updateCommandPalette() {
-	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.streaming {
+	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.customPickerOpen || m.streaming {
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
@@ -133,13 +213,33 @@ func (m *Model) updateCommandPalette() {
 		return
 	}
 
-	needle := strings.ToLower(strings.TrimSpace(raw))
+	full := strings.ToLower(strings.TrimSpace(raw))
+	// Match only on the command portion (first word). Once the user adds a
+	// space they're typing arguments — keep showing the matched command.
+	cmdPart := full
+	if idx := strings.IndexByte(full, ' '); idx != -1 {
+		cmdPart = full[:idx]
+	}
+
 	m.cmdOpen = true
 	m.cmdMatches = m.cmdMatches[:0]
 
 	for _, c := range m.commands {
-		if needle == "/" || strings.HasPrefix(strings.ToLower(c.Cmd), needle) {
+		if cmdPart == "/" || strings.HasPrefix(strings.ToLower(c.Cmd), cmdPart) {
 			m.cmdMatches = append(m.cmdMatches, c)
+		}
+	}
+	if m.customStore != nil {
+		for _, c := range m.customStore.List() {
+			cmdName := "/" + c.Name
+			desc := c.Prompt
+			if len(desc) > 50 {
+				desc = desc[:50] + "\u2026"
+			}
+			sc := slashCommand{Cmd: cmdName, Desc: desc, Prompt: c.Prompt}
+			if cmdPart == "/" || strings.HasPrefix(strings.ToLower(cmdName), cmdPart) {
+				m.cmdMatches = append(m.cmdMatches, sc)
+			}
 		}
 	}
 	if m.cmdSel >= len(m.cmdMatches) {
@@ -158,13 +258,17 @@ func (m Model) renderHelp() string {
 		{
 			heading: "Commands",
 			lines: []string{
-				th.Accent.Render("/help") + th.Meta.Render("            ") + "Show this help message",
-				th.Accent.Render("/session") + th.Meta.Render("         ") + "Open session picker, or " + th.Accent.Render("/session <id>") + " to switch directly",
-				th.Accent.Render("/model") + th.Meta.Render("           ") + "Open model picker to switch LLM",
-				th.Accent.Render("/theme") + th.Meta.Render("           ") + "Open theme picker with live preview",
-				th.Accent.Render("/copy") + th.Meta.Render("            ") + "Copy last assistant response to clipboard",
-				th.Accent.Render("/clear") + th.Meta.Render("           ") + "Clear transcript and session history",
-				th.Accent.Render("/exit") + ", " + th.Accent.Render("/quit") + th.Meta.Render("     ") + "Exit the application",
+				th.Accent.Render("/help") + th.Meta.Render("              ") + "Show this help message",
+				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker, or " + th.Accent.Render("/session <id>") + " to switch",
+				th.Accent.Render("/session rename") + th.Meta.Render("    ") + "Rename current session: " + th.Accent.Render("/session rename <name>"),
+				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker to switch LLM",
+				th.Accent.Render("/theme") + th.Meta.Render("             ") + "Open theme picker with live preview",
+				th.Accent.Render("/copy") + th.Meta.Render("              ") + "Copy last assistant response to clipboard",
+				th.Accent.Render("/clear") + th.Meta.Render("             ") + "Clear transcript and session history",
+				th.Accent.Render("/create-custom") + th.Meta.Render("     ") + "Save a reusable command: " + th.Accent.Render("/create-custom <name> <prompt>"),
+				th.Accent.Render("/customs") + th.Meta.Render("           ") + "Browse and run your saved custom commands",
+				th.Accent.Render("/delete-custom") + th.Meta.Render("     ") + "Remove a custom command: " + th.Accent.Render("/delete-custom <name>"),
+				th.Accent.Render("/exit") + ", " + th.Accent.Render("/quit") + th.Meta.Render("       ") + "Exit the application",
 			},
 		},
 		{

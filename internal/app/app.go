@@ -65,10 +65,15 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	sess, err := store.New()
-	if err != nil {
-		pool.Close()
-		return nil, err
+	var sess session.Session
+	if latest, ok := store.Latest(); ok && latest.IsEmpty() {
+		sess = latest
+	} else {
+		sess, err = store.New()
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
 
 	m := tui.New(tui.Config{DSN: cfg.DSN, Model: cfg.Model}, ag, store, sess)
