@@ -56,3 +56,15 @@ go run . --db "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
 - Default mode is **read-only**: the agent is only allowed to run safe SQL via tools.
 - This is a scaffold: add more tools (vacuum/analyze advice, index health, slow queries) as you iterate.
 
+## Sessions (local)
+
+Sessions are stored locally under:
+
+- `~/.pgwatch-copilot/sessions/<sessionId>.json`
+
+Override the base directory:
+
+```bash
+export PGWATCH_COPILOT_HOME="/custom/path"
+```
+

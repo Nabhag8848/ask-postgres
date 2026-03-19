@@ -4,23 +4,30 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type tuiModel struct {
 	cfg   appConfig
 	agent *agent
+	store *sessionStore
+	sess  session
 
 	ctx       context.Context
 	runCancel context.CancelFunc
 
 	width  int
 	height int
+	bodyH  int
+	bodyW  int
 
 	input   textinput.Model
 	output  viewport.Model
@@ -47,16 +54,45 @@ type tuiModel struct {
 	modelOptions    []string
 	modelSel        int
 
+	sessionPickerOpen bool
+	sessionList       []session
+	sessionSel        int
+
 	streaming bool
 	seenToken bool
 	events    <-chan agentEvent
+	pending   *pendingAssistant
 
 	err string
 }
 
-func newTUImodel(cfg appConfig, agent *agent) tuiModel {
+type pendingAssistant struct {
+	UserMessageID   string
+	AssistantMsgID  string
+	StartedAt       time.Time
+	InputChars      int
+	OutputChars     int
+	StreamedChunks  int
+	Model           string
+	Tools           []toolRecord
+	openToolIndexes []int
+
+	InputTokEst  int
+	OutputTokEst int
+}
+
+func newTUImodel(cfg appConfig, agent *agent, store *sessionStore, sess session) tuiModel {
 	themes := defaultThemes()
 	active := themes[0]
+	gc := loadGlobalConfig()
+	if gc.Theme != "" {
+		for _, t := range themes {
+			if t.Name == gc.Theme {
+				active = t
+				break
+			}
+		}
+	}
 
 	in := textinput.New()
 	in.Placeholder = "Ask about your Postgres… (try: “largest tables?”, “describe app.orders”, “revenue by day”)"
@@ -71,9 +107,11 @@ func newTUImodel(cfg appConfig, agent *agent) tuiModel {
 	sp.Spinner = spinner.Line
 	sp.Style = active.Accent
 
-	return tuiModel{
+	m := tuiModel{
 		cfg:     cfg,
 		agent:   agent,
+		store:   store,
+		sess:    sess,
 		input:   in,
 		output:  vp,
 		outText: "",
@@ -82,8 +120,10 @@ func newTUImodel(cfg appConfig, agent *agent) tuiModel {
 		theme:   active,
 		themes:  themes,
 		commands: []slashCommand{
+			{Cmd: "/session", Desc: "Switch/resume session (/session <id>)"},
 			{Cmd: "/theme", Desc: "Choose theme"},
 			{Cmd: "/model", Desc: "Choose model"},
+			{Cmd: "/copy", Desc: "Copy last response to clipboard"},
 			{Cmd: "/clear", Desc: "Clear transcript"},
 			{Cmd: "/exit", Desc: "Exit"},
 			{Cmd: "/quit", Desc: "Exit"},
@@ -95,6 +135,9 @@ func newTUImodel(cfg appConfig, agent *agent) tuiModel {
 			"gpt-4o",
 		},
 	}
+	m.rebuildTranscriptFromSession()
+	m.inputHistory = loadCommandHistory()
+	return m
 }
 
 func (m tuiModel) Init() tea.Cmd {
@@ -142,6 +185,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modelPickerOpen = false
 				return m, nil
 			}
+			if m.sessionPickerOpen && !m.streaming {
+				m.sessionPickerOpen = false
+				return m, nil
+			}
 			if m.cmdOpen && !m.streaming {
 				m.cmdOpen = false
 				m.cmdMatches = nil
@@ -156,6 +203,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = "cancelled"
 				return m, nil
 			}
+			_ = m.cleanupSessionIfEmpty()
 			return m, tea.Quit
 		case "up", "ctrl+p":
 			if m.streaming {
@@ -170,6 +218,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.modelPickerOpen {
 				if m.modelSel > 0 {
 					m.modelSel--
+				}
+				return m, nil
+			}
+			if m.sessionPickerOpen {
+				if m.sessionSel > 0 {
+					m.sessionSel--
 				}
 				return m, nil
 			}
@@ -197,6 +251,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.sessionPickerOpen {
+				if m.sessionSel < len(m.sessionList)-1 {
+					m.sessionSel++
+				}
+				return m, nil
+			}
 			if m.cmdOpen {
 				if m.cmdSel < len(m.cmdMatches)-1 {
 					m.cmdSel++
@@ -212,9 +272,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.streaming {
 				return m, nil
 			}
+			if m.sessionPickerOpen {
+				if len(m.sessionList) > 0 && m.sessionSel >= 0 && m.sessionSel < len(m.sessionList) {
+					sel := m.sessionList[m.sessionSel]
+					_ = m.switchToSession(sel.ID)
+				}
+				m.sessionPickerOpen = false
+				m.layout()
+				return m, nil
+			}
 			if m.themeOpen {
 				if len(m.themes) > 0 && m.themeSel >= 0 && m.themeSel < len(m.themes) {
 					m.applyTheme(m.themes[m.themeSel])
+					_ = m.persistSession()
+					m.savePreferences()
 				}
 				m.themeOpen = false
 				m.layout()
@@ -225,6 +296,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					model := m.modelOptions[m.modelSel]
 					m.cfg.Model = model
 					m.agent.SetModel(model)
+					_ = m.persistSession()
+					m.savePreferences()
 				}
 				m.modelPickerOpen = false
 				m.layout()
@@ -257,6 +330,29 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.histDraft = ""
 			m.input.SetValue("")
 			m.appendOutput("\n" + userLine(prompt) + "\n")
+			userMsgID, _ := newSessionID()
+			assistantMsgID, _ := newSessionID()
+			m.appendSessionMessage(sessionMessage{
+				ID:        userMsgID,
+				Role:      "user",
+				Content:   prompt,
+				CreatedAt: time.Now(),
+				Meta: messageMeta{
+					Model:            m.cfg.Model,
+					SessionMessageNo: len(m.sess.Messages) + 1,
+				},
+			})
+			m.pending = &pendingAssistant{
+				UserMessageID:   userMsgID,
+				AssistantMsgID:  assistantMsgID,
+				StartedAt:       time.Now(),
+				InputChars:      len(prompt),
+				Model:           m.cfg.Model,
+				Tools:           nil,
+				openToolIndexes: nil,
+				InputTokEst:     approxTokenCountChars(len(prompt)),
+				OutputTokEst:    0,
+			}
 			m.streaming = true
 			m.seenToken = false
 			m.dots = 0
@@ -272,12 +368,36 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case agentEventToken:
 			m.seenToken = true
 			m.appendOutput(msg.ev.Text)
+			if m.pending != nil {
+				m.pending.OutputChars += len(msg.ev.Text)
+				m.pending.StreamedChunks++
+				m.pending.OutputTokEst += approxTokenCountChars(len(msg.ev.Text))
+			}
 			return m, waitAgentEvent(m.events)
 		case agentEventToolStart:
-			// Intentionally hidden from the main UI for a Claude-code feel.
+			if m.pending != nil {
+				toolID, _ := newSessionID()
+				rec := toolRecord{
+					ID:        toolID,
+					Name:      deriveToolName(msg.ev.Text),
+					Input:     oneLine(msg.ev.Text),
+					StartedAt: time.Now(),
+				}
+				m.pending.Tools = append(m.pending.Tools, rec)
+				m.pending.openToolIndexes = append(m.pending.openToolIndexes, len(m.pending.Tools)-1)
+			}
 			return m, waitAgentEvent(m.events)
 		case agentEventToolEnd:
-			// Intentionally hidden from the main UI for a Claude-code feel.
+			if m.pending != nil {
+				if len(m.pending.openToolIndexes) > 0 {
+					i := m.pending.openToolIndexes[0]
+					m.pending.openToolIndexes = m.pending.openToolIndexes[1:]
+					if i >= 0 && i < len(m.pending.Tools) {
+						m.pending.Tools[i].Output = oneLine(msg.ev.Text)
+						m.pending.Tools[i].EndedAt = time.Now()
+					}
+				}
+			}
 			return m, waitAgentEvent(m.events)
 		case agentEventError:
 			m.streaming = false
@@ -285,6 +405,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runCancel = nil
 			}
 			m.err = msg.ev.Text
+			if m.pending != nil {
+				// Save an assistant error message record for traceability.
+				m.appendSessionMessage(sessionMessage{
+					ID:        m.pending.AssistantMsgID,
+					Role:      "assistant",
+					Content:   "error: " + msg.ev.Text,
+					CreatedAt: m.pending.StartedAt,
+					Usage: usageStats{
+						InputTokens:     approxTokenCountChars(m.pending.InputChars),
+						OutputTokens:    approxTokenCountChars(m.pending.OutputChars),
+						TotalTokens:     approxTokenCountChars(m.pending.InputChars) + approxTokenCountChars(m.pending.OutputChars),
+						OutputChars:     m.pending.OutputChars,
+						ReasoningTokens: 0,
+					},
+					Tools: m.pending.Tools,
+					Meta: messageMeta{
+						Model:            m.pending.Model,
+						StreamedChunks:   m.pending.StreamedChunks,
+						SessionMessageNo: len(m.sess.Messages) + 1,
+					},
+				})
+				m.pending = nil
+				_ = m.persistSession()
+			}
 			return m, nil
 		case agentEventDone:
 			m.streaming = false
@@ -292,7 +436,33 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runCancel = nil
 			}
 			// Marker-only, no "assistant" label.
-			m.appendOutput("\n" + assistantHeader() + strings.TrimSpace(msg.ev.Text) + "\n")
+			final := strings.TrimSpace(msg.ev.Text)
+			m.appendOutput("\n" + assistantHeader() + final + "\n")
+			if m.pending != nil {
+				inTok := approxTokenCountChars(m.pending.InputChars)
+				outTok := approxTokenCountChars(max(m.pending.OutputChars, len(final)))
+				m.appendSessionMessage(sessionMessage{
+					ID:        m.pending.AssistantMsgID,
+					Role:      "assistant",
+					Content:   final,
+					CreatedAt: m.pending.StartedAt,
+					Usage: usageStats{
+						InputTokens:     max(inTok, m.pending.InputTokEst),
+						OutputTokens:    max(outTok, m.pending.OutputTokEst),
+						TotalTokens:     max(inTok, m.pending.InputTokEst) + max(outTok, m.pending.OutputTokEst),
+						ReasoningTokens: 0,
+						OutputChars:     max(m.pending.OutputChars, len(final)),
+					},
+					Tools: m.pending.Tools,
+					Meta: messageMeta{
+						Model:            m.pending.Model,
+						StreamedChunks:   m.pending.StreamedChunks,
+						SessionMessageNo: len(m.sess.Messages) + 1,
+					},
+				})
+				m.pending = nil
+			}
+			_ = m.persistSession()
 			return m, nil
 		}
 	}
@@ -308,20 +478,108 @@ func (m *tuiModel) clearTranscript() {
 	m.output.SetContent("")
 	m.output.GotoBottom()
 	m.err = ""
+	m.sess.Messages = nil
+	m.pending = nil
+}
+
+func (m *tuiModel) appendSessionMessage(msg sessionMessage) {
+	if msg.ID == "" {
+		id, _ := newSessionID()
+		msg.ID = id
+	}
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now()
+	}
+	m.sess.Messages = append(m.sess.Messages, msg)
+}
+
+func (m *tuiModel) rebuildTranscriptFromSession() {
+	m.outText = ""
+	// Prefer rich messages when available.
+	if len(m.sess.Messages) > 0 {
+		for _, msg := range m.sess.Messages {
+			switch msg.Role {
+			case "user":
+				m.outText += "\n" + userLine(strings.TrimSpace(msg.Content)) + "\n"
+			case "assistant":
+				m.outText += "\n" + assistantHeader() + strings.TrimSpace(msg.Content) + "\n"
+			default:
+				m.outText += "\n" + strings.TrimSpace(msg.Content) + "\n"
+			}
+		}
+		return
+	}
+	// Legacy fallback.
+	for _, t := range m.sess.Turns {
+		m.outText += "\n" + userLine(strings.TrimSpace(t.User)) + "\n"
+		m.outText += "\n" + assistantHeader() + strings.TrimSpace(t.Assistant) + "\n"
+	}
+}
+
+func deriveToolName(input string) string {
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return "tool"
+	}
+	// Handles logs like "tool: sql_readonly" or raw function payload snippets.
+	l := strings.ToLower(s)
+	for _, n := range []string{"schema_overview", "describe_table", "sql_readonly"} {
+		if strings.Contains(l, n) {
+			return n
+		}
+	}
+	parts := strings.Fields(s)
+	if len(parts) > 0 {
+		return strings.Trim(parts[0], ":")
+	}
+	return "tool"
+}
+
+func approxTokenCountChars(chars int) int {
+	if chars <= 0 {
+		return 0
+	}
+	// Rough heuristic for English-like text.
+	t := chars / 4
+	if t < 1 {
+		return 1
+	}
+	return t
+}
+
+func messagesToTurns(msgs []sessionMessage) []chatTurn {
+	if len(msgs) == 0 {
+		return nil
+	}
+	var out []chatTurn
+	pendingUser := ""
+	for _, m := range msgs {
+		switch m.Role {
+		case "user":
+			pendingUser = m.Content
+		case "assistant":
+			out = append(out, chatTurn{
+				User:      pendingUser,
+				Assistant: m.Content,
+			})
+			pendingUser = ""
+		}
+	}
+	return out
 }
 
 func (m *tuiModel) pushHistory(prompt string) {
 	if strings.TrimSpace(prompt) == "" {
 		return
 	}
-	// Avoid immediate duplicates.
 	if n := len(m.inputHistory); n > 0 && m.inputHistory[n-1] == prompt {
 		return
 	}
 	m.inputHistory = append(m.inputHistory, prompt)
-	if len(m.inputHistory) > 100 {
-		m.inputHistory = m.inputHistory[len(m.inputHistory)-100:]
+	if len(m.inputHistory) > maxHistoryLines {
+		m.inputHistory = m.inputHistory[len(m.inputHistory)-maxHistoryLines:]
 	}
+	appendCommandHistory(prompt)
 }
 
 func (m *tuiModel) historyUp() {
@@ -358,7 +616,39 @@ func (m *tuiModel) historyDown() {
 }
 
 func (m *tuiModel) runSlashCommand(cmd string) tea.Cmd {
-	switch strings.TrimSpace(cmd) {
+	raw := strings.TrimSpace(cmd)
+	fields := strings.Fields(raw)
+	base := ""
+	arg := ""
+	if len(fields) > 0 {
+		base = fields[0]
+	}
+	if len(fields) > 1 {
+		arg = fields[1]
+	}
+
+	switch base {
+	case "/session":
+		if arg != "" {
+			if err := m.switchToSession(arg); err != nil {
+				m.appendOutput("\n" + assistantHeader() + "Could not open session " + arg + ": " + err.Error() + "\n")
+			}
+			return nil
+		}
+		// Open picker
+		if m.store != nil {
+			list, err := m.store.List()
+			if err == nil {
+				m.sessionList = list
+				m.sessionSel = 0
+				m.sessionPickerOpen = true
+				m.modelPickerOpen = false
+				m.themeOpen = false
+				m.cmdOpen = false
+				m.layout()
+			}
+		}
+		return nil
 	case "/theme":
 		m.themeOpen = true
 		m.modelPickerOpen = false
@@ -387,8 +677,26 @@ func (m *tuiModel) runSlashCommand(cmd string) tea.Cmd {
 		}
 		m.layout()
 		return nil
+	case "/copy":
+		text := m.lastAssistantContent()
+		if text == "" {
+			m.appendOutput("\n" + assistantHeader() + "Nothing to copy.\n")
+			return nil
+		}
+		if err := clipboard.WriteAll(text); err != nil {
+			m.appendOutput("\n" + assistantHeader() + "Clipboard error: " + err.Error() + "\n")
+			return nil
+		}
+		m.appendOutput("\n" + assistantHeader() + "Copied to clipboard.\n")
+		return nil
 	case "/clear":
+		// Session-scoped clear: wipe current session history + transcript and persist.
 		m.clearTranscript()
+		m.agent.ClearHistory()
+		m.sess.Turns = nil
+		// If the user cleared everything, delete the session file entirely.
+		_ = m.cleanupSessionIfEmpty()
+		_ = m.persistSession()
 		return nil
 	case "/exit", "/quit":
 		if m.streaming && m.runCancel != nil {
@@ -401,6 +709,15 @@ func (m *tuiModel) runSlashCommand(cmd string) tea.Cmd {
 		m.appendOutput("\n" + assistantHeader() + "Unknown command. Try /clear, /exit, /model, or /theme.\n")
 		return nil
 	}
+}
+
+func (m tuiModel) lastAssistantContent() string {
+	for i := len(m.sess.Messages) - 1; i >= 0; i-- {
+		if m.sess.Messages[i].Role == "assistant" {
+			return strings.TrimSpace(m.sess.Messages[i].Content)
+		}
+	}
+	return ""
 }
 
 type slashCommand struct {
@@ -416,6 +733,12 @@ func (m *tuiModel) updateCommandPalette() {
 		return
 	}
 	if m.modelPickerOpen {
+		m.cmdOpen = false
+		m.cmdMatches = nil
+		m.cmdSel = 0
+		return
+	}
+	if m.sessionPickerOpen {
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
@@ -459,8 +782,9 @@ func (m tuiModel) View() string {
 	// 3) single-line status/hint
 	// 4) prompt/input
 
-	headerInner := th.Title.Render("pgwatch-copilot") + "  " +
-		th.Meta.Render(fmt.Sprintf("db=%s  model=%s", safeDSNHint(m.cfg.DSN), m.cfg.Model))
+	// Keep header single-line; model is shown in the status line.
+	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN)))
+	headerInner := truncateWithEllipsis(headerLeft, max(40, m.width))
 	header := th.HeaderBar.Width(max(40, m.width)).Render(headerInner)
 	if m.err != "" {
 		header += "\n" + th.Error.Render("error: "+m.err)
@@ -473,6 +797,9 @@ func (m tuiModel) View() string {
 	if m.modelPickerOpen {
 		body = m.renderModelPicker()
 	}
+	if m.sessionPickerOpen {
+		body = m.renderSessionPicker()
+	}
 
 	leftStatus := "enter: send  ctrl+l: clear  esc: cancel/quit"
 	if m.streaming && !m.seenToken {
@@ -481,9 +808,12 @@ func (m tuiModel) View() string {
 		leftStatus = m.spin.View() + "  Generating" + animatedDots(m.dots) + "  " + th.Meta.Render("(Esc to cancel)")
 	}
 
-	rightStatus := th.Meta.Render("model: " + m.cfg.Model)
+	rightStatus := th.Meta.Render("model: " + m.cfg.Model + m.liveTokenUsageStatus())
+	w := max(40, m.width)
 	statusInner := m.statusLine(th.Hint.Render(leftStatus), rightStatus)
-	status := th.StatusBar.Width(max(40, m.width)).Render(statusInner)
+	// Absolute guarantee: never wrap, even with ANSI + padding.
+	statusInner = ansi.Truncate(statusInner, w, "")
+	status := th.StatusBar.Width(w).Render(statusInner)
 	if m.streaming && !m.seenToken {
 		// already handled above
 	} else if m.streaming && m.seenToken {
@@ -491,20 +821,204 @@ func (m tuiModel) View() string {
 	}
 	prompt := m.renderPrompt()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, status, prompt)
+	// If the transcript is short, keep the prompt adjacent to it (no forced
+	// empty viewport height above the prompt).
+	fillerH := 0
+	if !m.themeOpen && !m.modelPickerOpen && !m.sessionPickerOpen {
+		used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
+		fillerH = m.height - used
+		if fillerH < 0 {
+			fillerH = 0
+		}
+	}
+	filler := ""
+	if fillerH > 0 {
+		filler = strings.Repeat("\n", fillerH)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, status, prompt, filler)
+}
+
+func (m tuiModel) liveTokenUsageStatus() string {
+	if m.pending == nil {
+		return ""
+	}
+
+	inTok := m.pending.InputTokEst
+	outTok := m.pending.OutputTokEst
+	total := inTok + outTok
+
+	// Subtle animation: pulse the separator while streaming.
+	sep := "  ·  "
+	if m.streaming {
+		switch m.dots {
+		case 0, 2:
+			sep = "  •  "
+		default:
+			sep = "  ·  "
+		}
+	}
+	return sep + fmt.Sprintf("tok ~%d (in %d / out %d)", total, inTok, outTok)
+}
+
+func (m *tuiModel) persistSession() error {
+	if m.store == nil {
+		return nil
+	}
+	m.sess.Turns = messagesToTurns(m.sess.Messages)
+	return m.store.Save(m.sess)
+}
+
+func (m *tuiModel) savePreferences() {
+	saveGlobalConfig(globalConfig{
+		Model: m.cfg.Model,
+		Theme: m.theme.Name,
+	})
+}
+
+func (m *tuiModel) switchToSession(id string) error {
+	if m.store == nil {
+		return nil
+	}
+	// Try load; if it doesn't exist, create a new session with that id.
+	sess, err := m.store.Load(id)
+	if err != nil {
+		now := time.Now()
+		sess = session{
+			ID:        id,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := m.store.Save(sess); err != nil {
+			return err
+		}
+	}
+
+	_ = m.cleanupSessionIfEmpty()
+	_ = m.persistSession()
+
+	m.sess = sess
+	m.agent.SetHistory(messagesToTurns(sess.Messages))
+	if len(sess.Messages) == 0 {
+		m.agent.SetHistory(sess.Turns)
+	}
+
+	m.histIdx = -1
+	m.histDraft = ""
+
+	m.rebuildTranscriptFromSession()
+	m.output.SetContent(m.outText)
+	m.output.GotoBottom()
+	m.err = ""
+	return nil
+}
+
+func (m *tuiModel) cleanupSessionIfEmpty() error {
+	if m.store == nil {
+		return nil
+	}
+	// If the current session has no conversation, delete its file.
+	if m.sess.IsEmpty() {
+		return m.store.Delete(m.sess.ID)
+	}
+	return nil
+}
+
+func (m tuiModel) renderSessionPicker() string {
+	th := m.theme
+	title := th.Title.Render("Select session")
+	help := th.Meta.Render("↑/↓ to move • enter to resume • esc to cancel")
+	if len(m.sessionList) == 0 {
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(th.BorderColor).
+			Padding(1, 2).
+			Width(min(64, max(30, m.width-4))).
+			Render(title + "\n" + help + "\n\n" + th.Meta.Render("no sessions found"))
+		return lipgloss.Place(m.width, m.output.Height, lipgloss.Center, lipgloss.Center, box)
+	}
+
+	maxItems := min(10, len(m.sessionList))
+	start := 0
+	if m.sessionSel >= maxItems {
+		start = m.sessionSel - maxItems + 1
+	}
+
+	var b strings.Builder
+	for i := 0; i < maxItems; i++ {
+		idx := start + i
+		if idx >= len(m.sessionList) {
+			break
+		}
+		s := m.sessionList[idx]
+		line := s.ID + th.Meta.Render("  ") + th.Meta.Render(s.UpdatedAt.Format("2006-01-02 15:04"))
+		if idx == m.sessionSel {
+			b.WriteString(th.CmdSelected.Render(th.SelectGlyph + line))
+		} else {
+			b.WriteString(th.CmdItem.Render("  " + line))
+		}
+		if idx != start+maxItems-1 && idx != len(m.sessionList)-1 {
+			b.WriteByte('\n')
+		}
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(th.BorderColor).
+		Padding(1, 2).
+		Width(min(72, max(40, m.width-4))).
+		Render(title + "\n" + help + "\n\n" + b.String())
+	return lipgloss.Place(m.width, m.output.Height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m tuiModel) statusLine(left, right string) string {
 	// Right-align model outside the input border, like Claude Code.
 	w := max(40, m.width)
+	// Ensure this line never wraps by truncating when needed.
+	left = strings.ReplaceAll(left, "\n", " ")
+	right = strings.ReplaceAll(right, "\n", " ")
+
 	rw := lipgloss.Width(right)
 	lw := lipgloss.Width(left)
+
+	// Prefer truncating the left hint first to preserve model/tokens.
+	if lw+1+rw > w {
+		availLeft := w - rw - 1
+		if availLeft < 0 {
+			availLeft = 0
+		}
+		left = truncateWithEllipsis(left, availLeft)
+		lw = lipgloss.Width(left)
+	}
+	// If still too long, truncate right as well.
+	if lw+1+rw > w {
+		availRight := w - lw - 1
+		if availRight < 0 {
+			availRight = 0
+		}
+		right = truncateWithEllipsis(right, availRight)
+		rw = lipgloss.Width(right)
+	}
 
 	space := w - rw - lw
 	if space < 1 {
 		space = 1
 	}
 	return left + strings.Repeat(" ", space) + right
+}
+
+func truncateWithEllipsis(s string, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxW {
+		return s
+	}
+	if maxW <= 1 {
+		return "…"
+	}
+	// Hard truncate with no wrapping, ANSI-safe.
+	return ansi.Truncate(s, maxW, "…")
 }
 
 func (m *tuiModel) layout() {
@@ -515,8 +1029,10 @@ func (m *tuiModel) layout() {
 		headerLines = 2
 	}
 	promptLines := m.promptHeight()
-	bodyH := max(5, m.height-headerLines-1-promptLines)
+	bodyH := max(0, m.height-headerLines-1-promptLines)
 	bodyW := max(40, m.width)
+	m.bodyH = bodyH
+	m.bodyW = bodyW
 
 	m.output = viewport.New(bodyW, bodyH)
 	m.output.SetContent(m.outText)
@@ -530,10 +1046,19 @@ func (m *tuiModel) appendOutput(s string) {
 }
 
 func (m tuiModel) renderBody() string {
-	// Transcript
-	left := m.output.View()
-	left = lipgloss.NewStyle().Width(m.output.Width).Height(m.output.Height).Render(left)
-	return left
+	// Transcript: if content is shorter than available space, don't force a tall
+	// viewport (so the prompt can sit directly after the last message).
+	contentH := lipgloss.Height(m.outText)
+	if strings.TrimSpace(m.outText) == "" {
+		contentH = 0
+	}
+	if m.bodyH > 0 && contentH > m.bodyH {
+		left := m.output.View()
+		left = lipgloss.NewStyle().Width(m.output.Width).Height(m.output.Height).Render(left)
+		return left
+	}
+	// Non-scroll mode (short transcript): render as-is without fixed height.
+	return lipgloss.NewStyle().Width(max(40, m.width)).Render(m.outText)
 }
 
 func (m tuiModel) renderPrompt() string {

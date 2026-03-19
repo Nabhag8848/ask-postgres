@@ -35,10 +35,12 @@ func main() {
 	flag.DurationVar(&queryTimeout, "query-timeout", 5*time.Second, "Per-query timeout for SQL tool")
 	flag.Parse()
 
-	// Allow .env to set MODEL without requiring --model.
+	// Priority: --model flag > MODEL env var > global config file > default.
 	if model == "gpt-4.1-mini" {
 		if envModel := strings.TrimSpace(os.Getenv("MODEL")); envModel != "" {
 			model = envModel
+		} else if gc := loadGlobalConfig(); gc.Model != "" {
+			model = gc.Model
 		}
 	}
 

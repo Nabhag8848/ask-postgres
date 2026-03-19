@@ -53,7 +53,19 @@ func newApp(ctx context.Context, cfg appConfig) (*app, error) {
 		return nil, err
 	}
 
-	m := newTUImodel(cfg, agent)
+	store, err := newSessionStore()
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	sess, err := store.New()
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	m := newTUImodel(cfg, agent, store, sess)
 	return &app{
 		cfg:   cfg,
 		pool:  pool,

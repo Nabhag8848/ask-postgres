@@ -177,6 +177,27 @@ func (a *agent) appendHistory(user, assistant string) {
 	}
 }
 
+func (a *agent) SetHistory(turns []chatTurn) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.history = append([]chatTurn(nil), turns...)
+	if len(a.history) > 12 {
+		a.history = a.history[len(a.history)-12:]
+	}
+}
+
+func (a *agent) History() []chatTurn {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]chatTurn(nil), a.history...)
+}
+
+func (a *agent) ClearHistory() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.history = nil
+}
+
 func (a *agent) newLLM(handler callbacks.Handler) (llms.Model, error) {
 	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if key == "" {
