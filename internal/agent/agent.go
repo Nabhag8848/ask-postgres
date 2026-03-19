@@ -17,6 +17,8 @@ import (
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/anthropic"
+	"github.com/tmc/langchaingo/llms/googleai"
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/prompts"
 	"github.com/tmc/langchaingo/tools"
@@ -67,7 +69,7 @@ func (a *Agent) Run(ctx context.Context, userPrompt string) <-chan Event {
 
 		handler := &callbacksHandler{out: events}
 
-		llm, err := a.newLLM(handler)
+		llm, err := a.newLLM(ctx, handler)
 		if err != nil {
 			events <- Event{Type: EventError, Text: err.Error()}
 			return
@@ -186,26 +188,65 @@ func (a *Agent) ClearHistory() {
 	a.history = nil
 }
 
-func (a *Agent) newLLM(handler callbacks.Handler) (llms.Model, error) {
-	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	if key == "" {
-		return nil, errors.New("missing OPENAI_API_KEY")
+func detectProvider(model string) string {
+	m := strings.ToLower(model)
+	switch {
+	case strings.HasPrefix(m, "claude"):
+		return "anthropic"
+	case strings.HasPrefix(m, "gemini"):
+		return "google"
+	default:
+		return "openai"
 	}
+}
 
+func requireEnv(name string) (string, error) {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return "", fmt.Errorf("missing %s environment variable", name)
+	}
+	return v, nil
+}
+
+func (a *Agent) newLLM(ctx context.Context, handler callbacks.Handler) (llms.Model, error) {
 	model := a.Model()
-	opts := []openai.Option{
-		openai.WithToken(key),
-		openai.WithModel(model),
-		openai.WithCallback(handler),
+
+	switch detectProvider(model) {
+	case "anthropic":
+		key, err := requireEnv("ANTHROPIC_API_KEY")
+		if err != nil {
+			return nil, err
+		}
+		return anthropic.New(
+			anthropic.WithToken(key),
+			anthropic.WithModel(model),
+		)
+
+	case "google":
+		key, err := requireEnv("GOOGLE_API_KEY")
+		if err != nil {
+			return nil, err
+		}
+		return googleai.New(ctx,
+			googleai.WithAPIKey(key),
+			googleai.WithDefaultModel(model),
+		)
+
+	default:
+		key, err := requireEnv("OPENAI_API_KEY")
+		if err != nil {
+			return nil, err
+		}
+		opts := []openai.Option{
+			openai.WithToken(key),
+			openai.WithModel(model),
+			openai.WithCallback(handler),
+		}
+		if strings.TrimSpace(a.cfg.OpenAIBase) != "" {
+			opts = append(opts, openai.WithBaseURL(strings.TrimSpace(a.cfg.OpenAIBase)))
+		}
+		return openai.New(opts...)
 	}
-	if strings.TrimSpace(a.cfg.OpenAIBase) != "" {
-		opts = append(opts, openai.WithBaseURL(strings.TrimSpace(a.cfg.OpenAIBase)))
-	}
-	llm, err := openai.New(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("openai.New: %w", err)
-	}
-	return llm, nil
 }
 
 // SetModel changes the LLM model for subsequent runs.

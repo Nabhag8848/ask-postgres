@@ -156,6 +156,12 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			"gpt-4.1",
 			"gpt-4o-mini",
 			"gpt-4o",
+			"o3-mini",
+			"o4-mini",
+			"claude-sonnet-4-20250514",
+			"claude-3.5-haiku-20241022",
+			"gemini-2.5-flash",
+			"gemini-2.5-pro",
 		},
 	}
 	if cs, err := custom.NewStore(); err == nil {
