@@ -11,13 +11,14 @@ import (
 	"syscall"
 	"time"
 
+	"pgwatch-copilot/internal/app"
+	"pgwatch-copilot/internal/config"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Optional dev convenience: load .env if present.
-	// Environment variables still win if already set.
 	_ = godotenv.Load()
 
 	var (
@@ -39,7 +40,7 @@ func main() {
 	if model == "gpt-4.1-mini" {
 		if envModel := strings.TrimSpace(os.Getenv("MODEL")); envModel != "" {
 			model = envModel
-		} else if gc := loadGlobalConfig(); gc.Model != "" {
+		} else if gc := config.Load(); gc.Model != "" {
 			model = gc.Model
 		}
 	}
@@ -55,7 +56,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	app, err := newApp(ctx, appConfig{
+	a, err := app.New(ctx, app.Config{
 		DSN:          dsn,
 		Model:        model,
 		OpenAIBase:   openAIBase,
@@ -65,9 +66,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}
-	defer app.Close()
+	defer a.Close()
 
-	p := tea.NewProgram(app.model, tea.WithAltScreen())
+	p := tea.NewProgram(a.Model(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("run: %v", err)
 	}
