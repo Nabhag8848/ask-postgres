@@ -76,9 +76,10 @@ type Model struct {
 
 	shortcutsOpen bool
 
-	streaming bool
-	seenToken bool
-	events    <-chan agent.Event
+	streaming    bool
+	seenToken    bool
+	events       <-chan agent.Event
+	promptQueue  []string
 	pending   *pendingAssistant
 
 	err string
@@ -213,23 +214,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shortcutsOpen = false
 				return m, nil
 			}
-			if m.themeOpen && !m.streaming {
+			if m.themeOpen {
 				m.themeOpen = false
 				return m, nil
 			}
-			if m.modelPickerOpen && !m.streaming {
+			if m.modelPickerOpen {
 				m.modelPickerOpen = false
 				return m, nil
 			}
-			if m.sessionPickerOpen && !m.streaming {
+			if m.sessionPickerOpen {
 				m.sessionPickerOpen = false
 				return m, nil
 			}
-			if m.customPickerOpen && !m.streaming {
+			if m.customPickerOpen {
 				m.customPickerOpen = false
 				return m, nil
 			}
-			if m.cmdOpen && !m.streaming {
+			if m.cmdOpen {
 				m.cmdOpen = false
 				m.cmdMatches = nil
 				m.cmdSel = 0
@@ -240,15 +241,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runCancel = nil
 				m.streaming = false
 				m.seenToken = false
+				m.promptQueue = nil
 				m.err = "cancelled"
 				return m, nil
 			}
 			_ = m.cleanupSessionIfEmpty()
 			return m, tea.Quit
 		case "up", "ctrl+p":
-			if m.streaming {
-				return m, nil
-			}
 			if m.themeOpen {
 				if m.themeSel > 0 {
 					m.themeSel--
@@ -282,9 +281,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyUp()
 			return m, nil
 		case "down", "ctrl+n":
-			if m.streaming {
-				return m, nil
-			}
 			if m.themeOpen {
 				if m.themeSel < len(m.themes)-1 {
 					m.themeSel++
@@ -322,21 +318,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab":
 			if m.cmdOpen && len(m.cmdMatches) > 0 {
-				raw := m.input.Value()
-				prefix := raw
-				if idx := strings.IndexByte(raw, ' '); idx != -1 {
-					prefix = raw[:idx]
+				idx := m.cmdSel
+				if idx < 0 || idx >= len(m.cmdMatches) {
+					idx = 0
 				}
-				if prefix != m.tabPrefix {
-					m.tabCycle = 0
-					m.tabPrefix = prefix
-				}
-				idx := m.tabCycle % len(m.cmdMatches)
 				sel := m.cmdMatches[idx]
 				m.input.SetValue(sel.Cmd + " ")
 				m.input.CursorEnd()
-				m.cmdSel = idx
-				m.tabCycle++
 				m.updateCommandPalette()
 				return m, nil
 			}
@@ -372,9 +360,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
-	if m.streaming {
-		return m, nil
-	}
 	if m.sessionPickerOpen {
 		if len(m.sessionList) > 0 && m.sessionSel >= 0 && m.sessionSel < len(m.sessionList) {
 			sel := m.sessionList[m.sessionSel]
@@ -451,8 +436,16 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	return m, m.submitPrompt(prompt)
 }
 
-// submitPrompt sends a prompt to the agent and starts the streaming cycle.
+// submitPrompt sends a prompt to the agent. If already streaming, the prompt
+// is queued and will run automatically when the current request finishes.
 func (m *Model) submitPrompt(prompt string) tea.Cmd {
+	if m.streaming {
+		m.promptQueue = append(m.promptQueue, prompt)
+		m.input.SetValue("")
+		m.appendOutput("\n" + currentTheme.Meta.Render("  (queued: "+prompt+")") + "\n")
+		return nil
+	}
+
 	m.pushHistory(prompt)
 	m.histIdx = -1
 	m.histDraft = ""
@@ -528,6 +521,7 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 		return m, waitAgentEvent(m.events)
 	case agent.EventError:
 		m.streaming = false
+		m.promptQueue = nil
 		if m.runCancel != nil {
 			m.runCancel = nil
 		}
@@ -586,6 +580,11 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 			m.pending = nil
 		}
 		_ = m.persistSession()
+		if len(m.promptQueue) > 0 {
+			next := m.promptQueue[0]
+			m.promptQueue = m.promptQueue[1:]
+			return m, m.submitPrompt(next)
+		}
 		return m, nil
 	}
 	return m, nil

@@ -199,7 +199,7 @@ func (m Model) lastAssistantContent() string {
 }
 
 func (m *Model) updateCommandPalette() {
-	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.customPickerOpen || m.streaming {
+	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.customPickerOpen {
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0

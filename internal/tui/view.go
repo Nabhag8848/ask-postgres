@@ -106,11 +106,26 @@ func (m Model) renderPrompt() string {
 		Padding(0, 1).
 		Width(max(10, m.width-2))
 
-	content := m.input.View()
-	if m.cmdOpen {
-		content += "\n" + m.renderCommandPalette()
+	inputView := m.input.View()
+	if m.cmdOpen && len(m.cmdMatches) > 0 && m.cmdSel >= 0 && m.cmdSel < len(m.cmdMatches) {
+		sel := m.cmdMatches[m.cmdSel]
+		typed := m.input.Value()
+		ghost := ""
+		typedLower := strings.ToLower(typed)
+		cmdLower := strings.ToLower(sel.Cmd)
+		if strings.HasPrefix(cmdLower, typedLower) && len(sel.Cmd) > len(typed) {
+			ghost = sel.Cmd[len(typed):]
+		}
+		if ghost != "" {
+			inputView = m.input.Prompt + typed + th.Meta.Render(ghost)
+		}
 	}
-	return box.Render(content)
+	prompt := box.Render(inputView)
+	if m.cmdOpen {
+		palette := lipgloss.NewStyle().Padding(0, 2).Width(max(10, m.width)).Render(m.renderCommandPalette())
+		prompt = prompt + "\n" + palette
+	}
+	return prompt
 }
 
 func (m Model) promptHeight() int {
@@ -134,11 +149,15 @@ func (m Model) promptHeight() int {
 		}
 		return n + 4
 	default:
-		lines := 1
+		lines := 3
 		if m.cmdOpen {
-			lines += min(6, len(m.cmdMatches))
+			n := min(6, len(m.cmdMatches))
+			if len(m.cmdMatches) > 6 {
+				n++
+			}
+			lines += n + 1
 		}
-		return lines + 2
+		return lines
 	}
 }
 
