@@ -272,7 +272,7 @@ func (m Model) renderHelp() string {
 			heading: "Commands",
 			lines: []string{
 				th.Accent.Render("/help") + th.Meta.Render("              ") + "Show this help message",
-				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker (" + "Ctrl+D" + " to delete with confirm), or " + th.Accent.Render("/session <id>"),
+				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker (" + "Ctrl+D" + " to delete with confirm), or " + th.Accent.Render("/session <name|id>") + " (creates if missing)",
 				th.Accent.Render("/session rename") + th.Meta.Render("    ") + "Rename current session: " + th.Accent.Render("/session rename <name>"),
 				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker to switch LLM",
 				th.Accent.Render("/theme") + th.Meta.Render("             ") + "Open theme picker with live preview",
@@ -339,20 +339,44 @@ func (m *Model) adoptLoadedSession(sess session.Session) {
 }
 
 // switchToSession persists the current session (if non-empty), removes empty
-// session files when appropriate, loads the target id from disk (or creates
-// it), then delegates to adoptLoadedSession for the shared UI/agent state.
+// session files when appropriate, then resolves the provided ref as:
+// 1) exact session id, 2) exact session name (case-insensitive), or
+// 3) create a new session named ref if no match exists.
+// Finally it delegates to adoptLoadedSession for shared UI/agent state.
 func (m *Model) switchToSession(id string) error {
 	if m.store == nil {
 		return nil
 	}
-	sess, err := m.store.Load(id)
-	if err != nil {
-		now := currentTime()
-		sess = session.Session{
-			ID:        id,
-			CreatedAt: now,
-			UpdatedAt: now,
+	ref := strings.TrimSpace(id)
+	if ref == "" {
+		return nil
+	}
+
+	var (
+		sess session.Session
+		err  error
+	)
+	targetID := ""
+	if list, lerr := m.store.List(); lerr == nil {
+		for _, s := range list {
+			if s.ID == ref || strings.EqualFold(s.Name, ref) {
+				targetID = s.ID
+				break
+			}
 		}
+	}
+
+	if targetID != "" {
+		sess, err = m.store.Load(targetID)
+		if err != nil {
+			return err
+		}
+	} else {
+		sess, err = m.store.New()
+		if err != nil {
+			return err
+		}
+		sess.Name = ref
 		if err := m.store.Save(sess); err != nil {
 			return err
 		}

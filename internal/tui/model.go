@@ -88,6 +88,7 @@ type Model struct {
 }
 
 type pendingAssistant struct {
+	SessionID       string
 	UserMessageID   string
 	AssistantMsgID  string
 	StartedAt       time.Time
@@ -513,6 +514,7 @@ func (m *Model) submitPrompt(prompt string) tea.Cmd {
 		},
 	})
 	m.pending = &pendingAssistant{
+		SessionID:      m.sess.ID,
 		UserMessageID:  userMsgID,
 		AssistantMsgID: assistantMsgID,
 		StartedAt:      now,
@@ -533,8 +535,10 @@ func (m *Model) submitPrompt(prompt string) tea.Cmd {
 func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 	switch msg.ev.Type {
 	case agent.EventToken:
-		m.seenToken = true
-		m.appendOutput(msg.ev.Text)
+		if m.pending != nil && m.pending.SessionID == m.sess.ID {
+			m.seenToken = true
+			m.appendOutput(msg.ev.Text)
+		}
 		if m.pending != nil {
 			m.pending.OutputChars += len(msg.ev.Text)
 			m.pending.StreamedChunks++
@@ -572,9 +576,11 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 		if m.runCancel != nil {
 			m.runCancel = nil
 		}
-		m.err = msg.ev.Text
+		if m.pending == nil || m.pending.SessionID == m.sess.ID {
+			m.err = msg.ev.Text
+		}
 		if m.pending != nil {
-			m.appendSessionMessage(session.Message{
+			errMsg := session.Message{
 				ID:        m.pending.AssistantMsgID,
 				Role:      "assistant",
 				Content:   "error: " + msg.ev.Text,
@@ -589,11 +595,10 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 				Meta: session.MessageMeta{
 					Model:            m.pending.Model,
 					StreamedChunks:   m.pending.StreamedChunks,
-					SessionMessageNo: len(m.sess.Messages) + 1,
 				},
-			})
+			}
+			_ = m.appendMessageToSessionByID(m.pending.SessionID, errMsg)
 			m.pending = nil
-			_ = m.persistSession()
 		}
 		return m, nil
 	case agent.EventDone:
@@ -602,11 +607,13 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 			m.runCancel = nil
 		}
 		final := strings.TrimSpace(msg.ev.Text)
-		m.appendOutput("\n" + assistantHeader() + final + "\n")
+		if m.pending != nil && m.pending.SessionID == m.sess.ID {
+			m.appendOutput("\n" + assistantHeader() + final + "\n")
+		}
 		if m.pending != nil {
 			inTok := approxTokenCountChars(m.pending.InputChars)
 			outTok := approxTokenCountChars(max(m.pending.OutputChars, len(final)))
-			m.appendSessionMessage(session.Message{
+			doneMsg := session.Message{
 				ID:        m.pending.AssistantMsgID,
 				Role:      "assistant",
 				Content:   final,
@@ -621,12 +628,11 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 				Meta: session.MessageMeta{
 					Model:            m.pending.Model,
 					StreamedChunks:   m.pending.StreamedChunks,
-					SessionMessageNo: len(m.sess.Messages) + 1,
 				},
-			})
+			}
+			_ = m.appendMessageToSessionByID(m.pending.SessionID, doneMsg)
 			m.pending = nil
 		}
-		_ = m.persistSession()
 		if len(m.promptQueue) > 0 {
 			next := m.promptQueue[0]
 			m.promptQueue = m.promptQueue[1:]
@@ -661,6 +667,34 @@ func (m *Model) appendSessionMessage(msg session.Message) {
 		msg.CreatedAt = currentTime()
 	}
 	m.sess.Messages = append(m.sess.Messages, msg)
+}
+
+func (m *Model) appendMessageToSessionByID(sessionID string, msg session.Message) error {
+	if sessionID == "" || m.store == nil {
+		return nil
+	}
+	if msg.ID == "" {
+		id, _ := session.NewID()
+		msg.ID = id
+	}
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = currentTime()
+	}
+
+	if m.sess.ID == sessionID {
+		msg.Meta.SessionMessageNo = len(m.sess.Messages) + 1
+		m.sess.Messages = append(m.sess.Messages, msg)
+		return m.persistSession()
+	}
+
+	sess, err := m.store.Load(sessionID)
+	if err != nil {
+		return err
+	}
+	msg.Meta.SessionMessageNo = len(sess.Messages) + 1
+	sess.Messages = append(sess.Messages, msg)
+	sess.Turns = messagesToTurns(sess.Messages)
+	return m.store.Save(sess)
 }
 
 func (m *Model) rebuildTranscriptFromSession() {
