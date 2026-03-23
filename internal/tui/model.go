@@ -11,7 +11,6 @@ import (
 	"pgwatch-copilot/internal/history"
 	"pgwatch-copilot/internal/session"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -67,9 +66,10 @@ type Model struct {
 	modelOptions    []string
 	modelSel        int
 
-	sessionPickerOpen bool
-	sessionList       []session.Session
-	sessionSel        int
+	sessionPickerOpen     bool
+	sessionList           []session.Session
+	sessionSel            int
+	sessionDeleteConfirm  bool
 
 	customStore      *custom.Store
 	customPickerOpen bool
@@ -130,7 +130,6 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 	in.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	in.BlurredStyle.Base = lipgloss.NewStyle()
 	in.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	in.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter"))
 
 	vp := viewport.New(0, 0)
 	vp.SetContent("")
@@ -235,7 +234,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.sessionPickerOpen {
+				if m.sessionDeleteConfirm {
+					m.sessionDeleteConfirm = false
+					m.layout()
+					return m, nil
+				}
 				m.sessionPickerOpen = false
+				m.sessionDeleteConfirm = false
 				return m, nil
 			}
 			if m.customPickerOpen {
@@ -273,6 +278,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.sessionPickerOpen {
+				if m.sessionDeleteConfirm {
+					return m, nil
+				}
 				if m.sessionSel > 0 {
 					m.sessionSel--
 				}
@@ -306,6 +314,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.sessionPickerOpen {
+				if m.sessionDeleteConfirm {
+					return m, nil
+				}
 				if m.sessionSel < len(m.sessionList)-1 {
 					m.sessionSel++
 				}
@@ -328,6 +339,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+l":
 			m.clearTranscript()
 			return m, nil
+		case "ctrl+d":
+			if m.sessionPickerOpen && !m.sessionDeleteConfirm && len(m.sessionList) > 0 {
+				m.sessionDeleteConfirm = true
+				m.layout()
+				return m, nil
+			}
+		case "y", "Y":
+			if m.sessionPickerOpen && m.sessionDeleteConfirm {
+				return m.confirmDeleteSelectedSession()
+			}
+		case "n", "N":
+			if m.sessionPickerOpen && m.sessionDeleteConfirm {
+				m.sessionDeleteConfirm = false
+				m.layout()
+				return m, nil
+			}
 		case "tab":
 			if m.cmdOpen && len(m.cmdMatches) > 0 {
 				idx := m.cmdSel
@@ -343,7 +370,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m.handleEnter()
-		case "alt+enter", "ctrl+j":
+		case "ctrl+j":
 			m.input.InsertString("\n")
 			m.input.SetHeight(min(10, max(1, m.input.LineCount())))
 			m.layout()
@@ -380,11 +407,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.sessionPickerOpen {
+		if m.sessionDeleteConfirm {
+			return m.confirmDeleteSelectedSession()
+		}
 		if len(m.sessionList) > 0 && m.sessionSel >= 0 && m.sessionSel < len(m.sessionList) {
 			sel := m.sessionList[m.sessionSel]
 			_ = m.switchToSession(sel.ID)
 		}
 		m.sessionPickerOpen = false
+		m.sessionDeleteConfirm = false
 		m.layout()
 		return m, nil
 	}

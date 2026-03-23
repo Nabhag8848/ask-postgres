@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"pgwatch-copilot/internal/session"
@@ -76,6 +77,7 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 		m.modelPickerOpen = false
 		m.themeOpen = false
 		m.sessionPickerOpen = false
+		m.sessionDeleteConfirm = false
 		m.cmdOpen = false
 		m.layout()
 		return nil
@@ -116,6 +118,7 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 			if err == nil {
 				m.sessionList = list
 				m.sessionSel = 0
+				m.sessionDeleteConfirm = false
 				m.sessionPickerOpen = true
 				m.modelPickerOpen = false
 				m.themeOpen = false
@@ -269,7 +272,7 @@ func (m Model) renderHelp() string {
 			heading: "Commands",
 			lines: []string{
 				th.Accent.Render("/help") + th.Meta.Render("              ") + "Show this help message",
-				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker, or " + th.Accent.Render("/session <id>") + " to switch",
+				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker (" + "Ctrl+D" + " to delete with confirm), or " + th.Accent.Render("/session <id>"),
 				th.Accent.Render("/session rename") + th.Meta.Render("    ") + "Rename current session: " + th.Accent.Render("/session rename <name>"),
 				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker to switch LLM",
 				th.Accent.Render("/theme") + th.Meta.Render("             ") + "Open theme picker with live preview",
@@ -285,11 +288,12 @@ func (m Model) renderHelp() string {
 			heading: "Keybindings",
 			lines: []string{
 				th.Accent.Render("Enter") + th.Meta.Render("            ") + "Send prompt / confirm selection",
-				th.Accent.Render("Alt+Enter / Ctrl+J") + th.Meta.Render(" ") + "New line in prompt",
+				th.Accent.Render("Ctrl+J") + th.Meta.Render("          ") + "New line in prompt",
 				th.Accent.Render("Ctrl+L") + th.Meta.Render("           ") + "Clear transcript",
 				th.Accent.Render("\u2191") + th.Meta.Render("                ") + "Navigate prompt history (previous) / picker up",
 				th.Accent.Render("\u2193") + th.Meta.Render("                ") + "Navigate prompt history (next) / picker down",
 				th.Accent.Render("Tab") + th.Meta.Render("              ") + "Autocomplete command (press again to cycle matches)",
+				th.Accent.Render("Ctrl+D") + th.Meta.Render("      ") + "Delete session in session picker (confirm with enter / y)",
 				th.Accent.Render("Esc") + th.Meta.Render("              ") + "Cancel running query / close picker / quit",
 				th.Accent.Render("Ctrl+C") + th.Meta.Render("           ") + "Same as Esc",
 			},
@@ -316,6 +320,27 @@ func (m Model) renderHelp() string {
 	return b.String()
 }
 
+// adoptLoadedSession applies an already-loaded session to the TUI: in-memory
+// sess, agent chat history, input history draft, and the rendered transcript
+// viewport. It does not read from disk or persist the previous session — callers
+// handle that (e.g. switchToSession runs cleanup + persist first).
+func (m *Model) adoptLoadedSession(sess session.Session) {
+	m.sess = sess
+	m.agent.SetHistory(messagesToTurns(sess.Messages))
+	if len(sess.Messages) == 0 {
+		m.agent.SetHistory(sess.Turns)
+	}
+	m.histIdx = -1
+	m.histDraft = ""
+	m.rebuildTranscriptFromSession()
+	m.output.SetContent(m.outText)
+	m.output.GotoBottom()
+	m.err = ""
+}
+
+// switchToSession persists the current session (if non-empty), removes empty
+// session files when appropriate, loads the target id from disk (or creates
+// it), then delegates to adoptLoadedSession for the shared UI/agent state.
 func (m *Model) switchToSession(id string) error {
 	if m.store == nil {
 		return nil
@@ -336,18 +361,85 @@ func (m *Model) switchToSession(id string) error {
 	_ = m.cleanupSessionIfEmpty()
 	_ = m.persistSession()
 
-	m.sess = sess
-	m.agent.SetHistory(messagesToTurns(sess.Messages))
-	if len(sess.Messages) == 0 {
-		m.agent.SetHistory(sess.Turns)
+	m.adoptLoadedSession(sess)
+	return nil
+}
+
+// confirmDeleteSelectedSession removes the highlighted session from disk. If it
+// was the active session, clears agent memory and transcript and switches to
+// another session or creates a new empty one.
+func (m Model) confirmDeleteSelectedSession() (Model, tea.Cmd) {
+	p := m
+	p.sessionDeleteConfirm = false
+	if p.store == nil || len(p.sessionList) == 0 || p.sessionSel < 0 || p.sessionSel >= len(p.sessionList) {
+		p.layout()
+		return p, nil
 	}
 
-	m.histIdx = -1
-	m.histDraft = ""
+	id := p.sessionList[p.sessionSel].ID
+	wasCurrent := id == p.sess.ID
 
-	m.rebuildTranscriptFromSession()
-	m.output.SetContent(m.outText)
-	m.output.GotoBottom()
-	m.err = ""
-	return nil
+	if wasCurrent {
+		if p.streaming && p.runCancel != nil {
+			p.runCancel()
+			p.runCancel = nil
+		}
+		p.streaming = false
+		p.seenToken = false
+		p.promptQueue = nil
+		p.pending = nil
+	}
+
+	if err := p.store.Delete(id); err != nil {
+		p.err = err.Error()
+		p.layout()
+		return p, nil
+	}
+
+	list, err := p.store.List()
+	if err != nil {
+		p.err = err.Error()
+		list = nil
+	}
+	p.sessionList = list
+	pp := &p
+
+	if wasCurrent {
+		pp.agent.ClearHistory()
+		if len(p.sessionList) > 0 {
+			sess, lerr := p.store.Load(p.sessionList[0].ID)
+			if lerr != nil {
+				p.err = lerr.Error()
+				newSess, nerr := p.store.New()
+				if nerr != nil {
+					p.err = fmt.Sprintf("%v; %v", lerr, nerr)
+				} else {
+					pp.adoptLoadedSession(newSess)
+				}
+			} else {
+				pp.adoptLoadedSession(sess)
+			}
+			p.sessionSel = 0
+		} else {
+			newSess, nerr := p.store.New()
+			if nerr != nil {
+				p.err = nerr.Error()
+			} else {
+				pp.adoptLoadedSession(newSess)
+			}
+			p.sessionList, _ = p.store.List()
+			p.sessionSel = 0
+		}
+	} else {
+		if p.sessionSel >= len(p.sessionList) {
+			if len(p.sessionList) == 0 {
+				p.sessionSel = 0
+			} else {
+				p.sessionSel = len(p.sessionList) - 1
+			}
+		}
+	}
+
+	p.layout()
+	return p, nil
 }

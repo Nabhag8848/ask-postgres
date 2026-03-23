@@ -21,7 +21,7 @@ func (m Model) View() string {
 
 	body := m.renderBody()
 
-	leftStatus := "enter: send  ctrl+l: clear  esc: cancel/quit"
+	leftStatus := "enter: send  " + "Ctrl+L" + ": clear  esc: cancel/quit"
 	if m.streaming && !m.seenToken {
 		leftStatus = m.spin.View() + "  Thinking" + animatedDots(m.dots) + "  " + th.Meta.Render("(Esc to cancel)")
 	} else if m.streaming && m.seenToken {
@@ -141,12 +141,18 @@ func (m Model) renderPrompt() string {
 func (m Model) promptHeight() int {
 	switch {
 	case m.shortcutsOpen:
-		return 15
+		return 16
 	case m.themeOpen:
 		return min(8, len(m.themes)) + 3
 	case m.modelPickerOpen:
 		return min(10, len(m.modelOptions)) + 3
 	case m.sessionPickerOpen:
+		// sessionPickerConfirmHeight: title + help + question + note + y/n line
+		// (see renderSessionPicker when sessionDeleteConfirm); keep in sync if layout changes.
+		const sessionPickerConfirmHeight = 7
+		if m.sessionDeleteConfirm {
+			return sessionPickerConfirmHeight
+		}
 		n := min(10, len(m.sessionList))
 		if n == 0 {
 			n = 1

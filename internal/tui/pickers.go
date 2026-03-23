@@ -78,10 +78,19 @@ func (m Model) renderModelPicker() string {
 func (m Model) renderSessionPicker() string {
 	th := m.theme
 	title := th.Title.Render("Select session")
-	help := th.Meta.Render("↑/↓ to move • enter to resume • esc to cancel")
+	help := th.Meta.Render("↑/↓ to move • enter to open • " + "Ctrl+D" + " to delete • esc to cancel")
 
 	if len(m.sessionList) == 0 {
 		return title + "\n" + help + "\n" + th.Meta.Render("no sessions found")
+	}
+
+	if m.sessionDeleteConfirm && m.sessionSel >= 0 && m.sessionSel < len(m.sessionList) {
+		sel := m.sessionList[m.sessionSel]
+		label := sel.DisplayName()
+		q := th.User.Render("Delete session ") + th.Accent.Render(label) + th.User.Render("?")
+		yn := th.Meta.Render("enter / y to confirm  •  n / esc to cancel")
+		help2 := th.Meta.Render("This removes the file, transcript, and agent memory for that session.")
+		return title + "\n" + help + "\n" + q + "\n" + help2 + "\n" + yn
 	}
 
 	visible := min(10, len(m.sessionList))
@@ -227,11 +236,12 @@ func (m Model) renderShortcuts() string {
 		{"?", "show this shortcuts panel"},
 		{"/", "open command palette"},
 		{"Enter", "send prompt / confirm selection"},
-		{"Alt+Enter / Ctrl+J", "new line in prompt"},
+		{"Ctrl+J", "new line in prompt"},
 		{"Tab", "autocomplete command (cycle matches)"},
 		{"\u2191", "previous history / navigate up"},
 		{"\u2193", "next history / navigate down"},
 		{"Ctrl+L", "clear transcript"},
+		{"Ctrl+D", "delete session (in session picker, then confirm)"},
 		{"Esc", "cancel query / close picker / quit"},
 		{"Ctrl+C", "same as Esc"},
 	}
