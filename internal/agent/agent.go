@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"pgwatch-copilot/internal/config"
 	"pgwatch-copilot/internal/pgtools"
 	"pgwatch-copilot/internal/session"
 
@@ -208,12 +209,31 @@ func requireEnv(name string) (string, error) {
 	return v, nil
 }
 
+func resolveAPIKey(envName string) (string, error) {
+	cfg := config.Load()
+	switch envName {
+	case "OPENAI_API_KEY":
+		if strings.TrimSpace(cfg.OpenAIAPIKey) != "" {
+			return strings.TrimSpace(cfg.OpenAIAPIKey), nil
+		}
+	case "ANTHROPIC_API_KEY":
+		if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
+			return strings.TrimSpace(cfg.AnthropicAPIKey), nil
+		}
+	case "GOOGLE_API_KEY":
+		if strings.TrimSpace(cfg.GoogleAPIKey) != "" {
+			return strings.TrimSpace(cfg.GoogleAPIKey), nil
+		}
+	}
+	return requireEnv(envName)
+}
+
 func (a *Agent) newLLM(ctx context.Context, handler callbacks.Handler) (llms.Model, error) {
 	model := a.Model()
 
 	switch detectProvider(model) {
 	case "anthropic":
-		key, err := requireEnv("ANTHROPIC_API_KEY")
+		key, err := resolveAPIKey("ANTHROPIC_API_KEY")
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +243,7 @@ func (a *Agent) newLLM(ctx context.Context, handler callbacks.Handler) (llms.Mod
 		)
 
 	case "google":
-		key, err := requireEnv("GOOGLE_API_KEY")
+		key, err := resolveAPIKey("GOOGLE_API_KEY")
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +253,7 @@ func (a *Agent) newLLM(ctx context.Context, handler callbacks.Handler) (llms.Mod
 		)
 
 	default:
-		key, err := requireEnv("OPENAI_API_KEY")
+		key, err := resolveAPIKey("OPENAI_API_KEY")
 		if err != nil {
 			return nil, err
 		}

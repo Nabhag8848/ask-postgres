@@ -8,8 +8,11 @@ import (
 
 // Global holds user-level preferences persisted across sessions.
 type Global struct {
-	Model string `json:"model,omitempty"`
-	Theme string `json:"theme,omitempty"`
+	Model           string `json:"model,omitempty"`
+	Theme           string `json:"theme,omitempty"`
+	OpenAIAPIKey    string `json:"openai_api_key,omitempty"`
+	AnthropicAPIKey string `json:"anthropic_api_key,omitempty"`
+	GoogleAPIKey    string `json:"google_api_key,omitempty"`
 }
 
 func filePath() (string, error) {

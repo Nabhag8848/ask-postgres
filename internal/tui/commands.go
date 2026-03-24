@@ -19,7 +19,7 @@ type slashCommand struct {
 var builtinNames = map[string]bool{
 	"help": true, "session": true, "theme": true, "model": true,
 	"copy": true, "clear": true, "exit": true,
-	"create-custom": true, "customs": true, "delete-custom": true,
+	"create-custom": true, "customs": true, "delete-custom": true, "settings": true,
 }
 
 func (m *Model) runSlashCommand(cmd string) tea.Cmd {
@@ -143,6 +143,7 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 		return nil
 	case "/model":
 		m.modelPickerOpen = true
+		m.settingsOpen = false
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
@@ -152,6 +153,17 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 				break
 			}
 		}
+		m.layout()
+		return nil
+	case "/settings":
+		m.initSettingsForm()
+		m.settingsOpen = true
+		m.themeOpen = false
+		m.modelPickerOpen = false
+		m.sessionPickerOpen = false
+		m.customPickerOpen = false
+		m.sessionDeleteConfirm = false
+		m.cmdOpen = false
 		m.layout()
 		return nil
 	case "/copy":
@@ -202,7 +214,7 @@ func (m Model) lastAssistantContent() string {
 }
 
 func (m *Model) updateCommandPalette() {
-	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.customPickerOpen {
+	if m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen || m.customPickerOpen || m.settingsOpen {
 		m.cmdOpen = false
 		m.cmdMatches = nil
 		m.cmdSel = 0
@@ -276,6 +288,7 @@ func (m Model) renderHelp() string {
 				th.Accent.Render("/session rename") + th.Meta.Render("    ") + "Rename current session: " + th.Accent.Render("/session rename <name>"),
 				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker to switch LLM",
 				th.Accent.Render("/theme") + th.Meta.Render("             ") + "Open theme picker with live preview",
+				th.Accent.Render("/settings") + th.Meta.Render("          ") + "Open settings menu",
 				th.Accent.Render("/copy") + th.Meta.Render("              ") + "Copy last assistant response to clipboard",
 				th.Accent.Render("/clear") + th.Meta.Render("             ") + "Clear transcript and session history",
 				th.Accent.Render("/create-custom") + th.Meta.Render("     ") + "Save a reusable command: " + th.Accent.Render("/create-custom <name> <prompt>"),

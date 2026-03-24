@@ -265,3 +265,48 @@ func (m Model) renderShortcuts() string {
 	footer := th.Meta.Render("press any key to dismiss")
 	return title + "\n\n" + b.String() + "\n\n" + footer
 }
+
+func (m Model) renderSettingsPicker() string {
+	th := m.theme
+	title := th.Title.Render("Settings")
+	if !m.settingsFormOpen {
+		help := th.Meta.Render("enter open • esc cancel")
+		item := th.CmdSelected.Render(th.SelectGlyph + "Manage LLM providers")
+		return title + "\n" + help + "\n\n" + item
+	}
+
+	help := th.Meta.Render("tab/shift+tab or ↑/↓ move • ctrl+u clear field • enter save • esc back")
+	fieldW := max(20, m.width-10)
+	inlineField := func(i int) string {
+		// Keep Bubble's live input rendering (with blinking cursor) on the active field.
+		if i == m.settingsSel {
+			v := strings.ReplaceAll(m.settingsInputs[i].View(), "\n", "")
+			return "  " + v
+		}
+
+		val := strings.TrimSpace(m.settingsInputs[i].Value())
+		if val == "" {
+			return "  > " + th.Meta.Render("enter api key")
+		}
+		n := len([]rune(val))
+		maxMaskStars := max(6, fieldW-6)
+		visible := min(n, maxMaskStars)
+		masked := strings.Repeat("*", visible)
+		if n > maxMaskStars {
+			masked += "…"
+		}
+		return "  > " + masked
+	}
+
+	lines := []string{
+		th.Accent.Render("OpenAI API key"),
+		inlineField(0),
+		"",
+		th.Accent.Render("Anthropic API key"),
+		inlineField(1),
+		"",
+		th.Accent.Render("Google API key"),
+		inlineField(2),
+	}
+	return title + "\n" + help + "\n\n" + strings.Join(lines, "\n")
+}

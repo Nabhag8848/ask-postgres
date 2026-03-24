@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -66,23 +68,29 @@ type Model struct {
 	modelOptions    []string
 	modelSel        int
 
-	sessionPickerOpen     bool
-	sessionList           []session.Session
-	sessionSel            int
-	sessionDeleteConfirm  bool
+	sessionPickerOpen    bool
+	sessionList          []session.Session
+	sessionSel           int
+	sessionDeleteConfirm bool
 
 	customStore      *custom.Store
 	customPickerOpen bool
 	customList       []custom.Command
 	customSel        int
 
+	settingsOpen     bool
+	settingsFormOpen bool
+	settingsMenuSel  int
+	settingsInputs   []textinput.Model
+	settingsSel      int
+
 	shortcutsOpen bool
 
-	streaming    bool
-	seenToken    bool
-	events       <-chan agent.Event
-	promptQueue  []string
-	pending   *pendingAssistant
+	streaming   bool
+	seenToken   bool
+	events      <-chan agent.Event
+	promptQueue []string
+	pending     *pendingAssistant
 
 	err string
 }
@@ -157,6 +165,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			{Cmd: "/session rename", Desc: "Rename current session (/session rename <name>)"},
 			{Cmd: "/theme", Desc: "Choose theme"},
 			{Cmd: "/model", Desc: "Choose model"},
+			{Cmd: "/settings", Desc: "Manage provider settings"},
 			{Cmd: "/copy", Desc: "Copy last response to clipboard"},
 			{Cmd: "/clear", Desc: "Clear transcript"},
 			{Cmd: "/create-custom", Desc: "Save a custom command (/create-custom <name> <prompt>)"},
@@ -177,6 +186,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			"gemini-2.5-pro",
 		},
 	}
+	m.initSettingsForm()
 	if cs, err := custom.NewStore(); err == nil {
 		m.customStore = cs
 	}
@@ -220,6 +230,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
+		if m.settingsOpen {
+			return m.handleSettingsKey(msg)
+		}
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			if m.shortcutsOpen {
@@ -593,8 +606,8 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 				},
 				Tools: m.pending.Tools,
 				Meta: session.MessageMeta{
-					Model:            m.pending.Model,
-					StreamedChunks:   m.pending.StreamedChunks,
+					Model:          m.pending.Model,
+					StreamedChunks: m.pending.StreamedChunks,
 				},
 			}
 			_ = m.appendMessageToSessionByID(m.pending.SessionID, errMsg)
@@ -626,8 +639,8 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 				},
 				Tools: m.pending.Tools,
 				Meta: session.MessageMeta{
-					Model:            m.pending.Model,
-					StreamedChunks:   m.pending.StreamedChunks,
+					Model:          m.pending.Model,
+					StreamedChunks: m.pending.StreamedChunks,
 				},
 			}
 			_ = m.appendMessageToSessionByID(m.pending.SessionID, doneMsg)
@@ -767,6 +780,9 @@ func (m *Model) historyDown() {
 func (m *Model) layout() {
 	m.input.SetWidth(max(10, m.width-6))
 	m.input.SetHeight(min(10, max(1, m.input.LineCount())))
+	for i := range m.settingsInputs {
+		m.settingsInputs[i].Width = max(30, m.width-24)
+	}
 
 	headerLines := 1
 	if m.err != "" {
@@ -789,6 +805,163 @@ func (m *Model) appendOutput(s string) {
 	m.output.GotoBottom()
 }
 
+func (m *Model) initSettingsForm() {
+	gc := config.Load()
+	m.settingsInputs = make([]textinput.Model, 3)
+
+	makeInput := func(placeholder, value string) textinput.Model {
+		ti := textinput.New()
+		ti.Placeholder = placeholder
+		ti.SetValue(strings.TrimSpace(value))
+		ti.CharLimit = 512
+		ti.Width = max(30, m.width-24)
+		ti.EchoMode = textinput.EchoPassword
+		ti.EchoCharacter = '*'
+		return ti
+	}
+
+	m.settingsInputs[0] = makeInput("sk-...", gc.OpenAIAPIKey)
+	m.settingsInputs[1] = makeInput("sk-ant-...", gc.AnthropicAPIKey)
+	m.settingsInputs[2] = makeInput("AIza...", gc.GoogleAPIKey)
+	m.settingsSel = 0
+	m.settingsMenuSel = 0
+	m.settingsFormOpen = false
+	if len(m.settingsInputs) > 0 {
+		m.settingsInputs[0].Focus()
+	}
+}
+
+func (m *Model) focusSettingsInput(idx int) {
+	if idx < 0 || idx >= len(m.settingsInputs) {
+		return
+	}
+	for i := range m.settingsInputs {
+		if i == idx {
+			m.settingsInputs[i].Focus()
+			continue
+		}
+		m.settingsInputs[i].Blur()
+	}
+	m.settingsSel = idx
+}
+
+func (m *Model) availableKeyCount(openai, anthropic, google string) int {
+	count := 0
+	if strings.TrimSpace(openai) != "" {
+		count++
+	}
+	if strings.TrimSpace(anthropic) != "" {
+		count++
+	}
+	if strings.TrimSpace(google) != "" {
+		count++
+	}
+	return count
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if !m.settingsFormOpen {
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			m.settingsOpen = false
+			m.layout()
+			return m, nil
+		case "up", "down", "tab", "shift+tab":
+			// Single menu item for now; keep keys no-op and predictable.
+			return m, nil
+		case "enter":
+			m.settingsFormOpen = true
+			m.focusSettingsInput(0)
+			m.layout()
+			return m, nil
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.settingsFormOpen = false
+		m.layout()
+		return m, nil
+	case "ctrl+u":
+		if m.settingsSel >= 0 && m.settingsSel < len(m.settingsInputs) {
+			m.settingsInputs[m.settingsSel].SetValue("")
+		}
+		return m, nil
+	case "up", "shift+tab":
+		next := m.settingsSel - 1
+		if next < 0 {
+			next = len(m.settingsInputs) - 1
+		}
+		m.focusSettingsInput(next)
+		return m, nil
+	case "down", "tab":
+		next := m.settingsSel + 1
+		if next >= len(m.settingsInputs) {
+			next = 0
+		}
+		m.focusSettingsInput(next)
+		return m, nil
+	case "enter":
+		openai := strings.TrimSpace(m.settingsInputs[0].Value())
+		anthropic := strings.TrimSpace(m.settingsInputs[1].Value())
+		google := strings.TrimSpace(m.settingsInputs[2].Value())
+
+		// Empty field means "no override" and falls back to environment/.env.
+		effectiveOpenAI := openai
+		if effectiveOpenAI == "" {
+			effectiveOpenAI = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+		}
+		effectiveAnthropic := anthropic
+		if effectiveAnthropic == "" {
+			effectiveAnthropic = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+		}
+		effectiveGoogle := google
+		if effectiveGoogle == "" {
+			effectiveGoogle = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
+		}
+
+		if m.availableKeyCount(effectiveOpenAI, effectiveAnthropic, effectiveGoogle) == 0 {
+			m.err = "at least one provider key is required (OpenAI, Anthropic, or Google)"
+			return m, nil
+		}
+
+		gc := config.Load()
+		gc.OpenAIAPIKey = openai
+		gc.AnthropicAPIKey = anthropic
+		gc.GoogleAPIKey = google
+		config.Save(gc)
+
+		// Apply overrides to this running process immediately.
+		if openai != "" {
+			_ = os.Setenv("OPENAI_API_KEY", openai)
+		} else {
+			_ = os.Unsetenv("OPENAI_API_KEY")
+		}
+		if anthropic != "" {
+			_ = os.Setenv("ANTHROPIC_API_KEY", anthropic)
+		} else {
+			_ = os.Unsetenv("ANTHROPIC_API_KEY")
+		}
+		if google != "" {
+			_ = os.Setenv("GOOGLE_API_KEY", google)
+		} else {
+			_ = os.Unsetenv("GOOGLE_API_KEY")
+		}
+
+		m.settingsOpen = false
+		m.settingsFormOpen = false
+		m.err = ""
+		m.appendOutput("\n" + assistantHeader() + "Saved LLM provider API key settings.\n")
+		m.layout()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.settingsInputs[m.settingsSel], cmd = m.settingsInputs[m.settingsSel].Update(msg)
+	return m, cmd
+}
+
 func (m *Model) persistSession() error {
 	if m.store == nil {
 		return nil
@@ -798,10 +971,10 @@ func (m *Model) persistSession() error {
 }
 
 func (m *Model) savePreferences() {
-	config.Save(config.Global{
-		Model: m.cfg.Model,
-		Theme: m.theme.Name,
-	})
+	gc := config.Load()
+	gc.Model = m.cfg.Model
+	gc.Theme = m.theme.Name
+	config.Save(gc)
 }
 
 func (m *Model) cleanupSessionIfEmpty() error {

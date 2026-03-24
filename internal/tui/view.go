@@ -12,7 +12,7 @@ func (m Model) View() string {
 	th := m.theme
 
 	sessionLabel := m.sess.DisplayName()
-	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN))) + "  " + th.Meta.Render("session=" + sessionLabel)
+	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN))) + "  " + th.Meta.Render("session="+sessionLabel)
 	headerInner := truncateWithEllipsis(headerLeft, max(40, m.width))
 	header := th.HeaderBar.Width(max(40, m.width)).Render(headerInner)
 	if m.err != "" {
@@ -98,6 +98,8 @@ func (m Model) renderPrompt() string {
 		return inline.Render(m.renderSessionPicker())
 	case m.customPickerOpen:
 		return inline.Render(m.renderCustomPicker())
+	case m.settingsOpen:
+		return inline.Render(m.renderSettingsPicker())
 	}
 
 	box := th.PromptBox.Copy().
@@ -164,6 +166,11 @@ func (m Model) promptHeight() int {
 			n = 1
 		}
 		return n + 4
+	case m.settingsOpen:
+		if m.settingsFormOpen {
+			return 17
+		}
+		return 7
 	default:
 		inputLines := max(1, m.input.LineCount())
 		base := inputLines + 2
