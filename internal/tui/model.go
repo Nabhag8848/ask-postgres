@@ -161,7 +161,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 		themes:  themes,
 		commands: []slashCommand{
 			{Cmd: "/help", Desc: "Show all commands and keybindings"},
-			{Cmd: "/session", Desc: "Switch/resume session (/session <id>)"},
+			{Cmd: "/session", Desc: "Switch/resume session (/session <name|id>, creates if missing)"},
 			{Cmd: "/session rename", Desc: "Rename current session (/session rename <name>)"},
 			{Cmd: "/theme", Desc: "Choose theme"},
 			{Cmd: "/model", Desc: "Choose model"},
