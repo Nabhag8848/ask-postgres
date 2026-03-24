@@ -147,7 +147,10 @@ func (m Model) promptHeight() int {
 	case m.themeOpen:
 		return min(8, len(m.themes)) + 3
 	case m.modelPickerOpen:
-		return min(10, len(m.modelOptions)) + 3
+		if len(m.modelOptions) == 0 {
+			return modelPickerOverheadLines
+		}
+		return m.modelPickerVisibleCount() + modelPickerOverheadLines
 	case m.sessionPickerOpen:
 		// sessionPickerConfirmHeight: title + help + question + note + y/n line
 		// (see renderSessionPicker when sessionDeleteConfirm); keep in sync if layout changes.

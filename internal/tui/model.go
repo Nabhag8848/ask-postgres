@@ -20,6 +20,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// modelIDPlaceholderCmd is a palette-only hint; Enter/Tab expand to "/model " for typing a real id.
+const modelIDPlaceholderCmd = "/model <id>"
+
 // Config carries the runtime values the TUI needs from the app layer.
 type Config struct {
 	DSN   string
@@ -164,7 +167,8 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			{Cmd: "/session", Desc: "Switch/resume session (/session <name|id>, creates if missing)"},
 			{Cmd: "/session rename", Desc: "Rename current session (/session rename <name>)"},
 			{Cmd: "/theme", Desc: "Choose theme"},
-			{Cmd: "/model", Desc: "Choose model"},
+			{Cmd: "/model", Desc: "Choose model (picker)"},
+			{Cmd: modelIDPlaceholderCmd, Desc: "Set model by provider id (replace <id>)"},
 			{Cmd: "/settings", Desc: "Manage provider settings"},
 			{Cmd: "/copy", Desc: "Copy last response to clipboard"},
 			{Cmd: "/clear", Desc: "Clear transcript"},
@@ -173,18 +177,7 @@ func New(cfg Config, ag *agent.Agent, store *session.Store, sess session.Session
 			{Cmd: "/delete-custom", Desc: "Delete a custom command (/delete-custom <name>)"},
 			{Cmd: "/exit", Desc: "Exit"},
 		},
-		modelOptions: []string{
-			"gpt-4.1-mini",
-			"gpt-4.1",
-			"gpt-4o-mini",
-			"gpt-4o",
-			"o3-mini",
-			"o4-mini",
-			"claude-sonnet-4-20250514",
-			"claude-3.5-haiku-20241022",
-			"gemini-2.5-flash",
-			"gemini-2.5-pro",
-		},
+		modelOptions: buildModelOptions(),
 	}
 	m.initSettingsForm()
 	if cs, err := custom.NewStore(); err == nil {
@@ -376,7 +369,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					idx = 0
 				}
 				sel := m.cmdMatches[idx]
-				m.setInputValue(sel.Cmd + " ")
+				insert := sel.Cmd + " "
+				if sel.Cmd == modelIDPlaceholderCmd {
+					insert = "/model "
+				}
+				m.setInputValue(insert)
 				m.input.CursorEnd()
 				m.updateCommandPalette()
 				return m, nil
@@ -474,6 +471,17 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.cmdOpen {
 		if len(m.cmdMatches) > 0 && m.cmdSel >= 0 && m.cmdSel < len(m.cmdMatches) {
 			sel := m.cmdMatches[m.cmdSel]
+			if sel.Cmd == modelIDPlaceholderCmd {
+				m.resetInput()
+				m.setInputValue("/model ")
+				m.input.CursorEnd()
+				m.cmdOpen = false
+				m.cmdMatches = nil
+				m.cmdSel = 0
+				m.layout()
+				m.updateCommandPalette()
+				return m, nil
+			}
 			m.resetInput()
 			m.cmdOpen = false
 			m.cmdMatches = nil

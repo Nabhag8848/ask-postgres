@@ -130,3 +130,32 @@ func (m *Model) currentLine() string {
 	}
 	return m.input.Value()
 }
+
+// isCuratedModel reports whether id is in the /model picker list (same as buildModelOptions).
+func (m *Model) isCuratedModel(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	for _, opt := range m.modelOptions {
+		if opt == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) openModelPicker() {
+	m.modelPickerOpen = true
+	m.settingsOpen = false
+	m.cmdOpen = false
+	m.cmdMatches = nil
+	m.cmdSel = 0
+	for i, opt := range m.modelOptions {
+		if opt == m.cfg.Model {
+			m.modelSel = i
+			break
+		}
+	}
+	m.layout()
+}

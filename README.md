@@ -55,6 +55,8 @@ go run . --db "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
 
 - Default mode is **read-only**: the agent is only allowed to run safe SQL via tools.
 - This is a scaffold: add more tools (vacuum/analyze advice, index health, slow queries) as you iterate.
+- Multi-provider model support is built in (OpenAI, Anthropic Claude, Google Gemini).
+- Use `/model` to open the model picker, or `/model <model-id>` to set the model if that id is in the curated picker list.
 
 ## Sessions (local)
 

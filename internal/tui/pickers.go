@@ -5,6 +5,70 @@ import (
 	"strings"
 )
 
+const scrollThumb = "█"
+const scrollTrack = "│"
+
+// modelPickerOverheadLines is the picker chrome (title + help + layout slack),
+// excluding the scrolling model list. Must match promptHeight in view.go.
+const modelPickerOverheadLines = 3
+
+// modelPickerVisibleCount is how many model rows to show, derived from terminal
+// height so the picker grows with the viewport (same budget as layout()'s body).
+func (m Model) modelPickerVisibleCount() int {
+	n := len(m.modelOptions)
+	if n == 0 {
+		return 0
+	}
+	headerLines := 1
+	if m.err != "" {
+		headerLines = 2
+	}
+	const statusBarReserve = 1
+	maxList := m.height - headerLines - statusBarReserve - modelPickerOverheadLines
+	if maxList < 1 {
+		maxList = 1
+	}
+	return min(n, maxList)
+}
+
+// scrollGutter returns one styled string per visible row: a left scrollbar when
+// total > visible (proportional thumb), otherwise a single-space column for alignment.
+func scrollGutter(total, visible, scrollStart int, th theme) []string {
+	out := make([]string, visible)
+	if visible <= 0 {
+		return out
+	}
+	if total <= visible {
+		for i := range out {
+			out[i] = th.Meta.Render(" ")
+		}
+		return out
+	}
+	thumbH := visible * visible / total
+	if thumbH < 1 {
+		thumbH = 1
+	}
+	if thumbH > visible {
+		thumbH = visible
+	}
+	maxScroll := total - visible
+	thumbStart := 0
+	if maxScroll > 0 {
+		thumbStart = scrollStart * (visible - thumbH) / maxScroll
+	}
+	if thumbStart+thumbH > visible {
+		thumbStart = visible - thumbH
+	}
+	for r := 0; r < visible; r++ {
+		if r >= thumbStart && r < thumbStart+thumbH {
+			out[r] = th.Accent.Render(scrollThumb)
+		} else {
+			out[r] = th.Meta.Render(scrollTrack)
+		}
+	}
+	return out
+}
+
 func (m Model) renderThemePicker() string {
 	preview := m.theme
 	if len(m.themes) > 0 && m.themeSel >= 0 && m.themeSel < len(m.themes) {
@@ -42,30 +106,40 @@ func (m Model) renderThemePicker() string {
 
 func (m Model) renderModelPicker() string {
 	th := m.theme
-	if len(m.modelOptions) == 0 {
+	n := len(m.modelOptions)
+	if n == 0 {
 		return th.Meta.Render("no models configured")
 	}
 
-	title := th.Title.Render("Select model")
-	help := th.Meta.Render("↑/↓ to move • enter to select • esc to cancel")
+	pad := "  "
+	title := pad + th.Title.Render("Select model")
+	visible := m.modelPickerVisibleCount()
+	var help string
+	if n <= visible {
+		help = pad + th.Meta.Render("↑/↓ to move • enter to select • esc to cancel")
+	} else {
+		help = pad + th.Meta.Render("↑/↓ to move • enter to select • esc to cancel • scroll for more models")
+	}
 
-	visible := min(10, len(m.modelOptions))
 	start := 0
 	if m.modelSel >= visible {
 		start = m.modelSel - visible + 1
 	}
+	gutter := scrollGutter(n, visible, start, th)
 
 	var b strings.Builder
 	for i := 0; i < visible; i++ {
 		idx := start + i
-		if idx >= len(m.modelOptions) {
+		if idx >= n {
 			break
 		}
 		name := m.modelOptions[idx]
+		b.WriteString(gutter[i])
+		b.WriteByte(' ')
 		if idx == m.modelSel {
 			b.WriteString(th.CmdSelected.Render(th.SelectGlyph + name))
 		} else {
-			b.WriteString(th.CmdItem.Render("  " + name))
+			b.WriteString(th.CmdItem.Render(" "+name))
 		}
 		if i < visible-1 {
 			b.WriteByte('\n')

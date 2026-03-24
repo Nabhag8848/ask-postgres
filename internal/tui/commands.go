@@ -142,18 +142,29 @@ func (m *Model) runSlashCommand(cmd string) tea.Cmd {
 		m.layout()
 		return nil
 	case "/model":
-		m.modelPickerOpen = true
-		m.settingsOpen = false
-		m.cmdOpen = false
-		m.cmdMatches = nil
-		m.cmdSel = 0
-		for i, opt := range m.modelOptions {
-			if opt == m.cfg.Model {
-				m.modelSel = i
-				break
+		if arg != "" {
+			model := strings.TrimSpace(strings.TrimPrefix(raw, "/model"))
+			if model == "" {
+				m.appendOutput("\n" + assistantHeader() + "Usage: /model <model-id>\n")
+				return nil
 			}
+			if model == "<id>" {
+				m.appendOutput("\n" + assistantHeader() + "Replace <id> with a real model id (e.g. gpt-5.4, claude-opus-4-6, gemini-2.5-pro).\n")
+				return nil
+			}
+			if !m.isCuratedModel(model) {
+				m.appendOutput("\n" + assistantHeader() + "No model matches " + m.theme.Accent.Render(model) + ". Choose one in the picker.\n")
+				m.openModelPicker()
+				return nil
+			}
+			m.cfg.Model = model
+			m.agent.SetModel(model)
+			_ = m.persistSession()
+			m.savePreferences()
+			m.appendOutput("\n" + assistantHeader() + "Model set to " + m.theme.Accent.Render(model) + "\n")
+			return nil
 		}
-		m.layout()
+		m.openModelPicker()
 		return nil
 	case "/settings":
 		m.initSettingsForm()
@@ -286,7 +297,8 @@ func (m Model) renderHelp() string {
 				th.Accent.Render("/help") + th.Meta.Render("              ") + "Show this help message",
 				th.Accent.Render("/session") + th.Meta.Render("           ") + "Open session picker (" + "Ctrl+D" + " to delete with confirm), or " + th.Accent.Render("/session <name|id>") + " (creates if missing)",
 				th.Accent.Render("/session rename") + th.Meta.Render("    ") + "Rename current session: " + th.Accent.Render("/session rename <name>"),
-				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker to switch LLM",
+				th.Accent.Render("/model") + th.Meta.Render("             ") + "Open model picker (fills terminal height; scrollbar when list scrolls)",
+				th.Accent.Render("/model <id>") + th.Meta.Render("        ") + "Set model if id is in picker list; unknown id opens picker with a hint",
 				th.Accent.Render("/theme") + th.Meta.Render("             ") + "Open theme picker with live preview",
 				th.Accent.Render("/settings") + th.Meta.Render("          ") + "Manage LLM provider API keys",
 				th.Accent.Render("/copy") + th.Meta.Render("              ") + "Copy last assistant response to clipboard",
@@ -318,7 +330,7 @@ func (m Model) renderHelp() string {
 				"Type a natural-language question and the agent will query your database.",
 				"The agent has three tools: " + th.Accent.Render("schema_overview") + ", " + th.Accent.Render("describe_table") + ", " + th.Accent.Render("sql_readonly") + ".",
 				"All SQL is executed read-only with a timeout — your data is safe.",
-				"Start typing " + th.Accent.Render("/") + " to open the command palette with fuzzy matching.",
+				"Start typing " + th.Accent.Render("/") + " to open the command palette (prefix match on commands).",
 			},
 		},
 	}
