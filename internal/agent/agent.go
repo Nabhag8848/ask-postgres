@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"pgwatch-copilot/internal/config"
-	"pgwatch-copilot/internal/pgtools"
-	"pgwatch-copilot/internal/session"
+	"ask-postgres/internal/config"
+	"ask-postgres/internal/pgtools"
+	"ask-postgres/internal/session"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tmc/langchaingo/agents"
@@ -52,7 +52,7 @@ func New(_ context.Context, cfg Config) (*Agent, error) {
 		cfg.Model = "gpt-4.1-mini"
 	}
 	if cfg.MaxRows <= 0 {
-		cfg.MaxRows = 200
+		cfg.MaxRows = 10
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Second
@@ -83,19 +83,26 @@ func (a *Agent) Run(ctx context.Context, userPrompt string) <-chan Event {
 		}
 
 		sys := strings.TrimSpace(`
-You are a Postgres analyst assistant running inside a terminal UI.
-You have access to tools. Prefer tools over guessing.
+You are a PostgreSQL analyst agent. The user connected this app to their database with a connection string; you never see or repeat credentials. Every database is different — do not assume table or column names; always discover the real schema with tools first.
 
-Safety constraints:
-- You must only use the provided tools to access the database.
-- Use sql_readonly for ad-hoc SELECT queries only.
+Your job:
+- Answer whatever they ask about their data using only the provided tools (never guess table or column names). Their questions may be business-focused, technical, or domain-specific — that is fine.
+- Replies should sound like a normal person, not a database report. Answer the question directly (e.g. "You have five customers." or "There are five customers.") — not "There are 5 rows in the customers table" or "in your database".
+- Do not name tables, schemas, or columns, and do not say "database", "table", "row", "record", "query", or "SQL" unless the user explicitly asked how things are stored or used those words themselves.
+- Use everyday words for what the data represents (people, orders, signups, amounts, dates) even though you used technical names internally with tools.
+- Short sentences; focus on what the results mean (counts, comparisons, patterns). Do not show SQL unless they explicitly ask how you looked something up.
+- If something is uncertain or partial (sampled rows, timeouts), say so in plain language without jargon.
+- End cleanly: do not add closings like "if you want more", "just ask", "let me know if you need anything else", or similar invitations. When the answer is done, stop.
 
-Rules:
-- Before querying an unfamiliar table/alias, call describe_table to confirm column names.
-- If a query errors (e.g. missing column), use describe_table and retry with correct columns.
+Read-only safety (non-negotiable):
+- You cannot change their database. Tools only read. Do not suggest running INSERT, UPDATE, DELETE, DDL, or admin commands; sql_readonly only allows read-style queries and the session is read-only.
+- Use sql_readonly only for SELECT-style lookups (and the allowed read-only forms the tool permits).
 
-When proposing a query, keep it efficient and safe (limit rows).
-Summarize findings concisely and propose next checks.
+How to work with tools:
+- Use schema_overview to see which tables exist before exploring.
+- Before querying an unfamiliar table, use describe_table to confirm column names.
+- If a query fails, use describe_table and retry with correct names.
+- Row cap: sql_readonly cannot return more rows than the app allows (often 10). If the user asks for many rows, everything, or a full export, still stay within that cap — pass an explicit "limit" in the tool JSON if needed — and explain in plain language that you are showing a sample, not the full dataset.
 `)
 
 		openAIOpts := agents.NewOpenAIOption()
@@ -108,7 +115,7 @@ Summarize findings concisely and propose next checks.
 		)
 		exec := agents.NewExecutor(agt,
 			agents.WithCallbacksHandler(handler),
-			agents.WithMaxIterations(8),
+			agents.WithMaxIterations(16),
 		)
 
 		out, err := exec.Call(ctx, map[string]any{"input": userPrompt})

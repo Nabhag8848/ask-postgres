@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"pgwatch-copilot/internal/agent"
-	"pgwatch-copilot/internal/config"
-	"pgwatch-copilot/internal/custom"
-	"pgwatch-copilot/internal/history"
-	"pgwatch-copilot/internal/session"
+	"ask-postgres/internal/agent"
+	"ask-postgres/internal/config"
+	"ask-postgres/internal/custom"
+	"ask-postgres/internal/history"
+	"ask-postgres/internal/session"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -571,7 +571,7 @@ func (m Model) handleAgentEvent(msg agentMsg) (tea.Model, tea.Cmd) {
 			toolID, _ := session.NewID()
 			rec := session.ToolRecord{
 				ID:        toolID,
-				Name:      deriveToolName(msg.ev.Text),
+				Name:      friendlyToolName(deriveToolName(msg.ev.Text)),
 				Input:     oneLine(msg.ev.Text),
 				StartedAt: currentTime(),
 			}

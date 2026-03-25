@@ -1,5 +1,5 @@
 # Binary
-pgwatch-copilot
+ask-postgres
 
 # Go
 *.exe
@@ -26,4 +26,4 @@ Thumbs.db
 .env.local
 
 # User data
-.pgwatch-copilot/
+.ask-postgres/

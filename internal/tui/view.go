@@ -12,7 +12,7 @@ func (m Model) View() string {
 	th := m.theme
 
 	sessionLabel := m.sess.DisplayName()
-	headerLeft := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN))) + "  " + th.Meta.Render("session="+sessionLabel)
+	headerLeft := th.Title.Render("ask-postgres") + "  " + th.Meta.Render(fmt.Sprintf("db=%s", safeDSNHint(m.cfg.DSN))) + "  " + th.Meta.Render("session="+sessionLabel)
 	headerInner := truncateWithEllipsis(headerLeft, max(40, m.width))
 	header := th.HeaderBar.Width(max(40, m.width)).Render(headerInner)
 	if m.err != "" {

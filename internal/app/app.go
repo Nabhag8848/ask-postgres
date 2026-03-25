@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"pgwatch-copilot/internal/agent"
-	"pgwatch-copilot/internal/session"
-	"pgwatch-copilot/internal/tui"
+	"ask-postgres/internal/agent"
+	"ask-postgres/internal/session"
+	"ask-postgres/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,7 +32,7 @@ type App struct {
 // New wires together the database pool, agent, session store, and TUI.
 func New(ctx context.Context, cfg Config) (*App, error) {
 	if cfg.MaxRows <= 0 {
-		cfg.MaxRows = 200
+		cfg.MaxRows = 10
 	}
 	if cfg.QueryTimeout <= 0 {
 		cfg.QueryTimeout = 5 * time.Second

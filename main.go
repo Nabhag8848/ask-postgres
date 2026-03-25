@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"pgwatch-copilot/internal/app"
-	"pgwatch-copilot/internal/config"
+	"ask-postgres/internal/app"
+	"ask-postgres/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/joho/godotenv"
@@ -29,10 +29,10 @@ func main() {
 		queryTimeout time.Duration
 	)
 
-	flag.StringVar(&dsn, "db", "", "Postgres connection string (or set DATABASE_URL)")
+	flag.StringVar(&dsn, "db", "", "Your Postgres connection string (or set DATABASE_URL); used read-only for analysis")
 	flag.StringVar(&model, "model", "gpt-4.1-mini", "LLM model name (OpenAI-compatible)")
 	flag.StringVar(&openAIBase, "openai-base-url", "", "Optional OpenAI-compatible base URL")
-	flag.IntVar(&maxRows, "max-rows", 200, "Max rows returned by SQL tool")
+	flag.IntVar(&maxRows, "max-rows", 10, "Max rows returned per sql_readonly query (raises cap for larger samples)")
 	flag.DurationVar(&queryTimeout, "query-timeout", 5*time.Second, "Per-query timeout for SQL tool")
 	flag.Parse()
 

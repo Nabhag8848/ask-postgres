@@ -6,15 +6,15 @@ import (
 	"strings"
 )
 
-// ResolveBaseDir returns the root directory for all pgwatch-copilot data.
-// Override with PGWATCH_COPILOT_HOME; defaults to ~/.pgwatch-copilot.
+// ResolveBaseDir returns the root directory for all ask-postgres data.
+// Override with ASK_POSTGRES_HOME; defaults to ~/.ask-postgres.
 func ResolveBaseDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("PGWATCH_COPILOT_HOME")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("ASK_POSTGRES_HOME")); override != "" {
 		return override, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".pgwatch-copilot"), nil
+	return filepath.Join(home, ".ask-postgres"), nil
 }

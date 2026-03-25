@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"pgwatch-copilot/internal/session"
+	"ask-postgres/internal/session"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -79,6 +79,20 @@ func deriveToolName(input string) string {
 		return strings.Trim(parts[0], ":")
 	}
 	return "tool"
+}
+
+// friendlyToolName maps internal tool ids to short, non-technical labels for the UI.
+func friendlyToolName(internal string) string {
+	switch internal {
+	case "schema_overview":
+		return "Listing tables"
+	case "describe_table":
+		return "Inspecting a table"
+	case "sql_readonly":
+		return "Reading data (safe)"
+	default:
+		return internal
+	}
 }
 
 func approxTokenCountChars(chars int) int {

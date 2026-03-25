@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"pgwatch-copilot/internal/session"
+	"ask-postgres/internal/session"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -285,7 +285,7 @@ func (m *Model) updateCommandPalette() {
 
 func (m Model) renderHelp() string {
 	th := m.theme
-	title := th.Title.Render("pgwatch-copilot") + "  " + th.Meta.Render("— Postgres analyst powered by LLM tools")
+	title := th.Title.Render("ask-postgres") + "  " + th.Meta.Render("— Postgres analyst (read-only, plain-language answers)")
 
 	sections := []struct {
 		heading string
@@ -327,9 +327,8 @@ func (m Model) renderHelp() string {
 		{
 			heading: "Usage tips",
 			lines: []string{
-				"Type a natural-language question and the agent will query your database.",
-				"The agent has three tools: " + th.Accent.Render("schema_overview") + ", " + th.Accent.Render("describe_table") + ", " + th.Accent.Render("sql_readonly") + ".",
-				"All SQL is executed read-only with a timeout — your data is safe.",
+				"Connect with " + th.Accent.Render("--db") + " or " + th.Accent.Render("DATABASE_URL") + " (any schema). Ask what you need — business or technical — in your own words.",
+				"Replies are explained in plain language. The assistant only reads your data; it cannot change or delete anything (read-only, with timeouts).",
 				"Start typing " + th.Accent.Render("/") + " to open the command palette (prefix match on commands).",
 			},
 		},

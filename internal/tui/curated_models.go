@@ -8,7 +8,7 @@ import (
 // buildModelOptions returns non-deprecated model IDs from provider docs (OpenAI
 // "All models" + deprecations, Anthropic models overview, Google Gemini models).
 // Image, video, embedding, TTS, realtime, audio, moderation, computer-use, and
-// robotics models are omitted—they are not useful for this text Postgres analyst
+// robotics models are omitted—they are not useful for this text-first data assistant
 // flow. /model <id> still accepts any string.
 func buildModelOptions() []string {
 	curated := append(append(append([]string{}, openAICuratedModels()...), claudeCuratedModels()...), geminiCuratedModels()...)

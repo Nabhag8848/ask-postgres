@@ -1,4 +1,4 @@
--- Schema + sample data for pgwatch-copilot demo.
+-- Schema + sample data for ask-postgres demo.
 -- Runs automatically on first container init (fresh volume).
 
 \set ON_ERROR_STOP on

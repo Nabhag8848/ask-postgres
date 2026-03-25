@@ -1,4 +1,4 @@
-module pgwatch-copilot
+module ask-postgres
 
 go 1.24.4
 

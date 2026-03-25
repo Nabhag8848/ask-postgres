@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"pgwatch-copilot/internal/config"
+	"ask-postgres/internal/config"
 )
 
 // Command maps a short name to a prompt that gets sent to the agent.

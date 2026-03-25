@@ -8,10 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
-	"pgwatch-copilot/internal/config"
+	"ask-postgres/internal/config"
 )
 
 // Store manages session persistence as JSON files on disk.
@@ -32,10 +31,6 @@ func NewStore() (*Store, error) {
 }
 
 func resolveSessionsDir() (string, error) {
-	homeOverride := strings.TrimSpace(os.Getenv("PGWATCH_COPILOT_HOME"))
-	if homeOverride != "" {
-		return filepath.Join(homeOverride, "sessions"), nil
-	}
 	base, err := config.ResolveBaseDir()
 	if err != nil {
 		return "", err

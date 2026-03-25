@@ -19,7 +19,7 @@ func NewSchemaOverview(pool *pgxpool.Pool) *SchemaOverview {
 
 func (t *SchemaOverview) Name() string { return "schema_overview" }
 func (t *SchemaOverview) Description() string {
-	return "Get an overview of schemas/tables with estimated rows and total size. Input: empty string."
+	return "Read-only: list user tables with estimated row counts and size. Use first to see what data exists. Input: empty string."
 }
 
 func (t *SchemaOverview) Call(ctx context.Context, _ string) (string, error) {

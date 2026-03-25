@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"pgwatch-copilot/internal/config"
+	"ask-postgres/internal/config"
 )
 
 // MaxLines caps the number of history entries kept on disk.

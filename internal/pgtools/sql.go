@@ -29,8 +29,9 @@ func NewSQLReadonly(pool *pgxpool.Pool, maxRows int, timeout time.Duration) *SQL
 
 func (t *SQLReadonly) Name() string { return "sql_readonly" }
 func (t *SQLReadonly) Description() string {
-	return `Run a safe, read-only SQL query (SELECT only).
-Input JSON: {"query":"select ...","limit":100,"timeout_ms":5000}`
+	return `Read-only data lookup: run a single SELECT-style query (SELECT / WITH...SELECT, EXPLAIN, SHOW). Writes and DDL are rejected; connection uses a read-only transaction.
+The "limit" field is clamped to the app's max (default 10 rows) — use a small limit when the user wants many rows; full dumps are not supported here.
+Input JSON: {"query":"select ...","limit":10,"timeout_ms":5000}`
 }
 
 type sqlInput struct {

@@ -22,7 +22,7 @@ func NewDescribeTable(pool *pgxpool.Pool) *DescribeTable {
 
 func (t *DescribeTable) Name() string { return "describe_table" }
 func (t *DescribeTable) Description() string {
-	return "Describe a table's columns and indexes. Input: table name, optionally schema-qualified (e.g. public.users)."
+	return "Read-only: fetch column names/types and indexes for one table before querying it. Input: table name, optionally schema-qualified (e.g. public.users)."
 }
 
 func (t *DescribeTable) Call(ctx context.Context, input string) (string, error) {
