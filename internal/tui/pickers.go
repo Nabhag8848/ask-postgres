@@ -314,6 +314,7 @@ func (m Model) renderShortcuts() string {
 		{"Tab", "autocomplete command (cycle matches)"},
 		{"\u2191", "previous history / navigate up"},
 		{"\u2193", "next history / navigate down"},
+		{"PgUp/PgDn", "scroll transcript (long replies); mouse wheel"},
 		{"Ctrl+L", "clear transcript"},
 		{"Ctrl+D", "delete session (in session picker, then confirm)"},
 		{"Esc", "cancel query / close picker / quit"},

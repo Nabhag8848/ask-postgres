@@ -38,7 +38,9 @@ func (m Model) View() string {
 
 	prompt := m.renderPrompt()
 
-	used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
+	// Prompt directly under transcript so the input always sits below the last message;
+	// status bar follows the prompt (same vertical budget as layout()'s bodyH).
+	used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(prompt) + lipgloss.Height(status)
 	fillerH := m.height - used
 	if fillerH < 0 {
 		fillerH = 0
@@ -48,7 +50,7 @@ func (m Model) View() string {
 		filler = strings.Repeat("\n", fillerH)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, status, prompt, filler)
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, prompt, status, filler)
 }
 
 func (m Model) liveTokenUsageStatus() string {
@@ -77,16 +79,13 @@ func (m Model) renderBody() string {
 	if m.shouldShowWelcome() {
 		return m.renderWelcomePanel(w, m.bodyH)
 	}
-	contentH := lipgloss.Height(m.outText)
 	if strings.TrimSpace(m.outText) == "" {
-		contentH = 0
+		h := max(1, m.bodyH)
+		return lipgloss.NewStyle().Width(w).Height(h).Render("")
 	}
-	if m.bodyH > 0 && contentH > m.bodyH {
-		left := m.output.View()
-		left = lipgloss.NewStyle().Width(m.output.Width).Height(m.output.Height).Render(left)
-		return left
-	}
-	return lipgloss.NewStyle().Width(w).Render(m.outText)
+	// Always clip transcript through the viewport so tall replies stay scrollable.
+	out := m.output.View()
+	return lipgloss.NewStyle().Width(m.output.Width).Height(m.output.Height).Render(out)
 }
 
 func (m Model) renderPrompt() string {

@@ -12,6 +12,7 @@ import (
 	"ask-postgres/internal/history"
 	"ask-postgres/internal/session"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -214,6 +215,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 
+	case tea.MouseMsg:
+		if m.transcriptScrollable() && !m.transcriptScrollBlocked() {
+			var cmd tea.Cmd
+			m.output, cmd = m.output.Update(msg)
+			return m, cmd
+		}
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
@@ -225,6 +233,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.settingsOpen {
 			return m.handleSettingsKey(msg)
+		}
+		if m.transcriptScrollable() && !m.transcriptScrollBlocked() {
+			switch msg.String() {
+			case "pgup", "pgdown":
+				var cmd tea.Cmd
+				m.output, cmd = m.output.Update(msg)
+				return m, cmd
+			}
 		}
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -805,15 +821,65 @@ func (m *Model) layout() {
 	m.bodyH = bodyH
 	m.bodyW = bodyW
 
-	m.output = viewport.New(bodyW, bodyH)
+	sameSize := m.output.Width == bodyW && m.output.Height == bodyH
+	if !sameSize {
+		m.output = viewport.New(bodyW, bodyH)
+		applyViewportKeyMap(&m.output)
+	}
 	m.output.SetContent(m.outText)
-	m.output.GotoBottom()
+	if !sameSize {
+		m.output.GotoBottom()
+	} else if m.output.PastBottom() {
+		m.output.GotoBottom()
+	}
 }
 
 func (m *Model) appendOutput(s string) {
+	if s == "" {
+		return
+	}
+	stickToBottom := m.output.AtBottom()
 	m.outText += s
 	m.output.SetContent(m.outText)
-	m.output.GotoBottom()
+	if stickToBottom {
+		m.output.GotoBottom()
+	}
+}
+
+// transcriptScrollable is true when the transcript is taller than the body viewport.
+func (m Model) transcriptScrollable() bool {
+	if m.shouldShowWelcome() {
+		return false
+	}
+	if strings.TrimSpace(m.outText) == "" {
+		return false
+	}
+	if m.bodyH <= 0 {
+		return false
+	}
+	return lipgloss.Height(m.outText) > m.bodyH
+}
+
+// transcriptScrollBlocked is true when a modal should keep pgup/mouse from scrolling the transcript.
+func (m Model) transcriptScrollBlocked() bool {
+	return m.settingsOpen || m.themeOpen || m.modelPickerOpen || m.sessionPickerOpen ||
+		m.customPickerOpen || m.shortcutsOpen || m.cmdOpen
+}
+
+// applyViewportKeyMap frees ↑/↓ for input history; transcript scroll uses PgUp/PgDn and mouse wheel.
+func applyViewportKeyMap(vp *viewport.Model) {
+	vp.KeyMap.PageUp = key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "scroll transcript up"),
+	)
+	vp.KeyMap.PageDown = key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdn", "scroll transcript down"),
+	)
+	vp.KeyMap.HalfPageUp = key.NewBinding(key.WithDisabled())
+	vp.KeyMap.HalfPageDown = key.NewBinding(key.WithDisabled())
+	vp.KeyMap.Up = key.NewBinding(key.WithDisabled())
+	vp.KeyMap.Down = key.NewBinding(key.WithDisabled())
 }
 
 func (m *Model) initSettingsForm() {
