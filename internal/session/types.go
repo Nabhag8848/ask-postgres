@@ -1,6 +1,9 @@
 package session
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ChatTurn pairs a user prompt with an assistant response.
 type ChatTurn struct {
@@ -64,7 +67,24 @@ type MessageMeta struct {
 	SessionMessageNo int    `json:"session_message_no,omitempty"`
 }
 
-// IsEmpty reports whether the session contains no messages or turns.
+// IsEmpty reports whether the session has no user/assistant chat yet.
+// System-only messages (or unknown roles) do not count — they are not shown in the transcript or sent to the LLM as chat.
 func (s Session) IsEmpty() bool {
-	return len(s.Messages) == 0 && len(s.Turns) == 0
+	if len(s.Turns) > 0 {
+		for _, t := range s.Turns {
+			if strings.TrimSpace(t.User) != "" || strings.TrimSpace(t.Assistant) != "" {
+				return false
+			}
+		}
+	}
+	if len(s.Messages) == 0 {
+		return true
+	}
+	for _, m := range s.Messages {
+		switch m.Role {
+		case "user", "assistant":
+			return false
+		}
+	}
+	return true
 }

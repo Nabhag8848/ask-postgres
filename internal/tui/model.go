@@ -723,6 +723,9 @@ func (m *Model) rebuildTranscriptFromSession() {
 	if len(m.sess.Messages) > 0 {
 		for _, msg := range m.sess.Messages {
 			switch msg.Role {
+			case "system":
+				// Never mirror into the transcript or LLM history as user/assistant.
+				continue
 			case "user":
 				m.outText += "\n" + userLine(strings.TrimSpace(msg.Content)) + "\n"
 			case "assistant":

@@ -114,6 +114,9 @@ func messagesToTurns(msgs []session.Message) []session.ChatTurn {
 	pendingUser := ""
 	for _, m := range msgs {
 		switch m.Role {
+		case "system":
+			// Not part of LLM chat history (e.g. UI/session notices).
+			continue
 		case "user":
 			pendingUser = m.Content
 		case "assistant":
