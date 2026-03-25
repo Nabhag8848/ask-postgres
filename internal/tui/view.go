@@ -30,8 +30,10 @@ func (m Model) View() string {
 
 	rightStatus := th.Meta.Render("model: " + m.cfg.Model + m.liveTokenUsageStatus())
 	w := max(40, m.width)
-	statusInner := m.statusLine(th.Hint.Render(leftStatus), rightStatus)
-	statusInner = ansi.Truncate(statusInner, w, "")
+	// StatusBar uses Padding(0,1); inner text area is two cells narrower than Width.
+	statusContentW := max(1, w-2)
+	statusInner := m.statusLine(th.Hint.Render(leftStatus), rightStatus, statusContentW)
+	statusInner = ansi.Truncate(statusInner, statusContentW, "")
 	status := th.StatusBar.Width(w).Render(statusInner)
 
 	prompt := m.renderPrompt()
@@ -188,8 +190,8 @@ func (m Model) promptHeight() int {
 	}
 }
 
-func (m Model) statusLine(left, right string) string {
-	w := max(40, m.width)
+func (m Model) statusLine(left, right string, contentW int) string {
+	w := max(1, contentW)
 	left = strings.ReplaceAll(left, "\n", " ")
 	right = strings.ReplaceAll(right, "\n", " ")
 
