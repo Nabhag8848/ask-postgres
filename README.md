@@ -2,6 +2,10 @@
 
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/) [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/) [![Bubble Tea](https://img.shields.io/badge/Bubble%20Tea-TUI-FF67C7?style=flat)](https://github.com/charmbracelet/bubbletea) [![pgx](https://img.shields.io/badge/pgx-v5-003B57?style=flat&logo=postgresql&logoColor=white)](https://github.com/jackc/pgx) [![langchaingo](https://img.shields.io/badge/langchaingo-agents-7C3AED?style=flat)](https://github.com/tmc/langchaingo) [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
+![Screen recording of the ask-postgres TUI](assets/ask-postgres.gif)
+
+---
+
 **Ask questions about your own PostgreSQL database in plain English—without leaving the terminal.**
 
 ask-postgres is a small, focused CLI: you point it at a database you already run or own, type what you want to know in natural language, and get answers you can act on. Behind the scenes an LLM proposes read-only SQL, runs it through your connection, and explains results in normal language. No separate web app, no hosted “data warehouse” product—just your shell, your Postgres URL, and the model you choose.
@@ -37,14 +41,6 @@ To relocate all app data:
 ```bash
 export ASK_POSTGRES_HOME="/custom/path"
 ```
-
----
-
-## Demo
-
-![Screen recording of the ask-postgres TUI](assets/ask-postgres.gif)
-
-*Demo media and other static assets live in [`assets/`](assets/).*
 
 ---
 
