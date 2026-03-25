@@ -1,5 +1,7 @@
 # ask-postgres
 
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/) [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/) [![Bubble Tea](https://img.shields.io/badge/Bubble%20Tea-TUI-FF67C7?style=flat)](https://github.com/charmbracelet/bubbletea) [![pgx](https://img.shields.io/badge/pgx-v5-003B57?style=flat&logo=postgresql&logoColor=white)](https://github.com/jackc/pgx) [![langchaingo](https://img.shields.io/badge/langchaingo-agents-7C3AED?style=flat)](https://github.com/tmc/langchaingo) [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+
 ask-postgres is a small terminal app that sits between you and your PostgreSQL database. You connect it to a database you already have, type questions in normal language, and it reads your data and answers in plain English—without drowning you in database jargon. It never writes to your database: lookups are read-only, with sensible limits so you don’t accidentally pull huge result sets.
 
 It’s a comfortable fit when you’re exploring an unfamiliar schema, sanity-checking counts, or wanting a quick, human-sounding read on what the data suggests—all from the terminal.
