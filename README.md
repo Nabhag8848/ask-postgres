@@ -6,6 +6,10 @@ ask-postgres is a small terminal app that sits between you and your PostgreSQL d
 
 It’s a comfortable fit when you’re exploring an unfamiliar schema, sanity-checking counts, or wanting a quick, human-sounding read on what the data suggests—all from the terminal.
 
+## Demo
+
+![Screen recording of the ask-postgres TUI](assets/ask-postgres.gif)
+
 ---
 
 ## What you need
@@ -93,13 +97,18 @@ Optional flags:
 | `--query-timeout` | How long each SQL tool call may run |
 | `--openai-base-url` | Use a local OpenAI-compatible API (e.g. Ollama, LM Studio) |
 
-### 5. First time in the TUI
+### 5. Using the TUI
 
 After it launches:
 
-- Type a question and press Enter.
-- Run `/help` for commands (sessions, themes, model picker, API keys under `/settings`, and more).
-- Run `/model` to pick OpenAI, Claude, or Gemini models from the curated list, depending on which key you configured.
+- **Welcome panel** — When the transcript is empty (new or cleared session), you’ll see a welcome screen with tips. That UI is not part of the chat history sent to the model.
+- **Layout** — The conversation fills the main area, the **input prompt sits directly under the transcript**, and the **status line** (shortcuts hint, streaming state, model name) is below the prompt.
+- **Long replies** — The full transcript stays available: scroll with **PgUp** / **PgDn** or the **mouse wheel** (in terminals that report mouse events). Arrow keys **↑** / **↓** move through **input history**, not the transcript.
+- Press **?** for a shortcuts sheet (includes transcript scrolling).
+- Type a question and press **Enter** to send.
+- Run **`/help`** for slash commands (sessions, themes, model picker, API keys under `/settings`, and more).
+- Run **`/model`** to pick OpenAI, Claude, or Gemini models from the curated list, depending on which key you configured.
+- **Ctrl+L** clears the transcript. **`/clear`** does the same and also clears the current session’s saved history and the assistant’s in-memory context for this chat (see **`/help`** for other session commands).
 
 ---
 
@@ -125,6 +134,7 @@ export ASK_POSTGRES_HOME="/custom/path"
 - Read-only: queries run in a read-only transaction. The assistant is guided not to attempt writes or schema changes.
 - Small samples: each data query is capped (default 10 rows) so answers stay manageable. For more rows, e.g. `go run . --max-rows 200`.
 - Providers: OpenAI-style, Anthropic (Claude), and Google (Gemini) models are supported via `/model` and the env keys above.
+- Transcript: earlier turns are not discarded when a reply is long—you can scroll the history. While you are scrolled up, new streamed text generally won’t yank the view to the bottom until you’re already following the end of the transcript.
 
 ---
 
