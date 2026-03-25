@@ -73,6 +73,10 @@ func (m Model) liveTokenUsageStatus() string {
 }
 
 func (m Model) renderBody() string {
+	w := max(40, m.width)
+	if m.shouldShowWelcome() {
+		return m.renderWelcomePanel(w, m.bodyH)
+	}
 	contentH := lipgloss.Height(m.outText)
 	if strings.TrimSpace(m.outText) == "" {
 		contentH = 0
@@ -82,7 +86,7 @@ func (m Model) renderBody() string {
 		left = lipgloss.NewStyle().Width(m.output.Width).Height(m.output.Height).Render(left)
 		return left
 	}
-	return lipgloss.NewStyle().Width(max(40, m.width)).Render(m.outText)
+	return lipgloss.NewStyle().Width(w).Render(m.outText)
 }
 
 func (m Model) renderPrompt() string {
