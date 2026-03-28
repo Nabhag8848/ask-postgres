@@ -38,9 +38,8 @@ func (m Model) View() string {
 
 	prompt := m.renderPrompt()
 
-	// Prompt directly under transcript so the input always sits below the last message;
-	// status bar follows the prompt (same vertical budget as layout()'s bodyH).
-	used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(prompt) + lipgloss.Height(status)
+	// Status hints (model, shortcuts) sit directly under the transcript; input prompt follows.
+	used := lipgloss.Height(header) + lipgloss.Height(body) + lipgloss.Height(status) + lipgloss.Height(prompt)
 	fillerH := m.height - used
 	if fillerH < 0 {
 		fillerH = 0
@@ -50,7 +49,7 @@ func (m Model) View() string {
 		filler = strings.Repeat("\n", fillerH)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, prompt, status, filler)
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, status, prompt, filler)
 }
 
 func (m Model) liveTokenUsageStatus() string {
